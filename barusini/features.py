@@ -51,7 +51,7 @@ def find_best_subset(
         for i in trange(X.shape[1]):
             X_act = X.drop(X.columns[i], axis=1)
             act_score = cross_val_score(
-                estimator, X, y, cv=cv, n_jobs=-1, scoring=metric
+                estimator, X_act, y, cv=cv, n_jobs=-1, scoring=metric
             ).mean()
             if is_new_better(base_score, act_score, maximize):
                 base_score = act_score
