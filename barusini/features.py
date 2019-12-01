@@ -13,6 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm as tqdm
+import os
 
 
 class CustomLabelEncoder:
@@ -28,6 +29,17 @@ ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1)
 CV = StratifiedKFold(n_splits=3)
 METRIC = "roc_auc"
 MAXIMIZE = True
+STAGE_NAME = "STAGE"
+_, TERMINAL_COLS = os.popen("stty size", "r").read().split()
+TERMINAL_COLS = int(TERMINAL_COLS)
+
+
+def format_str(x, total_len=TERMINAL_COLS):
+    middle = total_len // 2
+    num_paddings = middle - len(x) // 2 - 1
+    padding = "-" * num_paddings
+    result = "{} {} {}".format(padding, x, padding)
+    return result
 
 
 def trange(x):
@@ -87,6 +99,7 @@ def dummy_base_line(x):
 def generic_change(
     X_old,
     y,
+    stage_name=STAGE_NAME,
     cv=CV,
     estimator=ESTIMATOR,
     metric=METRIC,
@@ -95,6 +108,7 @@ def generic_change(
     generator=None,
     recursive=False,
 ):
+    print(format_str("Starting stage {}".format(stage_name)))
     X = get_baseline_X(X_old).copy()
     base_score = cross_val_score(
         estimator, X, y, cv=cv, n_jobs=-1, scoring=metric
@@ -124,16 +138,22 @@ def generic_change(
     print("Dropped", [x for x in X_old.columns if x not in X.columns])
     print("Left", [x for x in X.columns])
     print("New", [x for x in X.columns if x not in X_old.columns])
+    print(format_str("Stage {} finished".format(stage_name)))
     return X
 
 
 def find_best_subset(X, y, **kwargs):
     return generic_change(
-        X, y, generator=feature_reduction_generator, recursive=True, **kwargs
+        X,
+        y,
+        stage_name="Finding best subset",
+        generator=feature_reduction_generator,
+        recursive=True,
+        **kwargs
     )
 
 
-def get_encoding_generator(feature, target):
+def get_encoding_generator(feature, target, drop=False):
     def categorical_encoding_generator(X):
         encoders = [CustomLabelEncoder, BinaryEncoder, CatBoostEncoder]
         for enc_class in trange(encoders):
@@ -146,7 +166,11 @@ def get_encoding_generator(feature, target):
                 name_map = {x: "{} {}".format(x, enc_str) for x in new.columns}
                 new = new.rename(columns=name_map)
 
-            X_ = X.join(new)
+            if drop:
+                X_ = X.drop(feature.name, axis=1)
+            else:
+                X_ = X
+            X_ = X_.join(new)
             yield X_
 
     return categorical_encoding_generator
@@ -159,7 +183,26 @@ def encode_categoricals(X_all, y, features_to_use, categoricals=None, **kwargs):
 
     for feature in trange(categoricals):
         X = generic_change(
-            X, y, generator=get_encoding_generator(X_all[feature], y), **kwargs
+            X,
+            y,
+            stage_name="Encoding categoricals {}".format(feature),
+            generator=get_encoding_generator(X_all[feature], y),
+            **kwargs
+        )
+    return X
+
+
+def recode_categoricals(X, y, max_unique=10, **kwargs):
+    nunique = X.nunique()
+    categoricals = [f for f in nunique.index if nunique[f] <= max_unique]
+    print("Trying to recode following categorical values:", categoricals)
+    for feature in trange(categoricals):
+        X = generic_change(
+            X,
+            y,
+            stage_name="Recoding {}".format(feature),
+            generator=get_encoding_generator(X[feature], y, drop=True),
+            **kwargs
         )
     return X
 
@@ -168,6 +211,9 @@ def auto_ml(X, y, **kwargs):
     X_ = basic_preprocess(X)
     X_ = find_best_subset(X_, y, **kwargs)
     X_ = encode_categoricals(X, y, X_.columns, **kwargs)
+    X_ = recode_categoricals(X_, y, **kwargs)
+    cols = sorted([x for x in X_.columns])
+    print("Final features:", cols)
     return X_
 
 
