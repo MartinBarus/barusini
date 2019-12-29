@@ -8,21 +8,13 @@
 ####################################################################
 
 import pandas as pd
-from category_encoders import BinaryEncoder, CatBoostEncoder
+from category_encoders import BinaryEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
-from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm as tqdm
-import os
 
-
-class CustomLabelEncoder:
-    def __init__(self):
-        self.enc = LabelEncoder()
-
-    def fit_transform(self, X, *args):
-        x = self.enc.fit_transform(X)
-        return pd.Series(x, index=X.index, name=X.name)
+from barusini.transformers import CustomLabelEncoder, TargetEncoder
+from barusini.utils import get_terminal_size
 
 
 ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1)
@@ -30,8 +22,7 @@ CV = StratifiedKFold(n_splits=3)
 METRIC = "roc_auc"
 MAXIMIZE = True
 STAGE_NAME = "STAGE"
-_, TERMINAL_COLS = os.popen("stty size", "r").read().split()
-TERMINAL_COLS = int(TERMINAL_COLS)
+TERMINAL_COLS = get_terminal_size()
 
 
 def format_str(x, total_len=TERMINAL_COLS):
@@ -155,7 +146,7 @@ def find_best_subset(X, y, **kwargs):
 
 def get_encoding_generator(feature, target, drop=False):
     def categorical_encoding_generator(X):
-        encoders = [CustomLabelEncoder, BinaryEncoder, CatBoostEncoder]
+        encoders = [CustomLabelEncoder, BinaryEncoder, TargetEncoder]
         for enc_class in trange(encoders):
             enc = enc_class()
             enc_str = enc.__class__.__name__
