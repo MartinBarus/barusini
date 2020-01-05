@@ -107,3 +107,6 @@ venv.bak/
 .DS_Store
 .idea
 
+# pickled models
+*.pickle
+*.pkl

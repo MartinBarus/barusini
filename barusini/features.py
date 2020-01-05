@@ -8,13 +8,19 @@
 ####################################################################
 
 import pandas as pd
-from category_encoders import BinaryEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 
-from barusini.transformers import CustomLabelEncoder, TargetEncoder
-from barusini.utils import get_terminal_size
+from barusini.transformers import (
+    ColumnDropTransformer,
+    CustomOneHotEncoder,
+    CustomLabelEncoder,
+    MissingValueImputer,
+    ReorderColumnsTransformer,
+    TargetEncoder,
+)
+from barusini.utils import get_terminal_size, load_object, save_object
 
 
 ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1)
@@ -23,6 +29,7 @@ METRIC = "roc_auc"
 MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
+ALLOWED_CAT_ENCODERS = [CustomOneHotEncoder, CustomLabelEncoder, TargetEncoder]
 
 
 def format_str(x, total_len=TERMINAL_COLS):
@@ -46,41 +53,46 @@ def is_new_better(old, new, maximize):
 
 
 def clean_missing(X):
-    missing = {}
-    for col in X:
-        min_val = X[col].min()
-        if pd.isna(min_val):
-            min_val = 0
-        X[col] = X[col].fillna(min_val - 1)
-        if X[col].std() == 0:
-            X = X.drop(col, axis=1)
-        else:
-            missing[col] = min_val - 1
-    return X, missing
+    imputer = MissingValueImputer()
+    X = imputer.fit_transform(X)
+
+    return X, imputer
 
 
 def drop_categoricals(X):
-    return X.drop(X.select_dtypes(object).columns, axis=1)
+    dropped_cols = X.select_dtypes(object).columns
+    dropper = ColumnDropTransformer(dropped_cols)
+    X = dropper.transform(X)
+
+    return X, dropper
 
 
 def drop_uniques(X, thr=0.99):
     nunique = X.nunique()
+    dropped_cols = []
     for x in nunique.index:
         if (nunique[x] / X.shape[0]) >= thr:
-            X = X.drop(x, axis=1)
-    return X
+            dropped_cols.append(x)
+    dropper = ColumnDropTransformer(dropped_cols)
+    X = dropper.transform(X)
+
+    return X, dropper
 
 
 def basic_preprocess(X):
-    X = drop_uniques(X)
-    X = drop_categoricals(X)
-    X, missing = clean_missing(X)
-    return X
+    X, unique_dropper = drop_uniques(X)
+    X, categorical_dropper = drop_categoricals(X)
+    X, imputer = clean_missing(X)
+    transformers = [unique_dropper, categorical_dropper, imputer]
+
+    return X, transformers
 
 
 def feature_reduction_generator(X):
     for i in trange(X.shape[1]):
-        yield X.drop(X.columns[i], axis=1)
+        col = X.columns[i]
+        transformer = ColumnDropTransformer([col])
+        yield transformer.transform(X), [transformer]
 
 
 def dummy_base_line(x):
@@ -95,29 +107,32 @@ def generic_change(
     estimator=ESTIMATOR,
     metric=METRIC,
     maximize=MAXIMIZE,
-    get_baseline_X=dummy_base_line,
     generator=None,
     recursive=False,
 ):
     print(format_str("Starting stage {}".format(stage_name)))
-    X = get_baseline_X(X_old).copy()
+    X = X_old.copy()
     base_score = cross_val_score(
         estimator, X, y, cv=cv, n_jobs=-1, scoring=metric
     ).mean()
     print("BASE", base_score)
     original_best = base_score
+    transformers = []
     while True:
         act_best = None
-        for X_act in generator(X):
+        transformers_best = None
+        for X_act, transformers_act in generator(X):
             act_score = cross_val_score(
                 estimator, X_act, y, cv=cv, n_jobs=-1, scoring=metric
             ).mean()
             if is_new_better(base_score, act_score, maximize):
                 base_score = act_score
                 act_best = X_act
+                transformers_best = transformers_act
 
         if act_best is not None:
             X = act_best
+            transformers.extend(transformers_best)
             print("CURRENT BEST", base_score)
         else:
             break
@@ -130,7 +145,7 @@ def generic_change(
     print("Left", [x for x in X.columns])
     print("New", [x for x in X.columns if x not in X_old.columns])
     print(format_str("Stage {} finished".format(stage_name)))
-    return X
+    return X, transformers
 
 
 def find_best_subset(X, y, **kwargs):
@@ -146,23 +161,17 @@ def find_best_subset(X, y, **kwargs):
 
 def get_encoding_generator(feature, target, drop=False):
     def categorical_encoding_generator(X):
-        encoders = [CustomLabelEncoder, BinaryEncoder, TargetEncoder]
+        encoders = ALLOWED_CAT_ENCODERS
         for enc_class in trange(encoders):
             enc = enc_class()
-            enc_str = enc.__class__.__name__
             new = enc.fit_transform(feature, target)
-            if type(new) is pd.Series:
-                new.name = new.name + " " + enc_str
-            else:
-                name_map = {x: "{} {}".format(x, enc_str) for x in new.columns}
-                new = new.rename(columns=name_map)
 
             if drop:
                 X_ = X.drop(feature.name, axis=1)
             else:
                 X_ = X
             X_ = X_.join(new)
-            yield X_
+            yield X_, [enc]
 
     return categorical_encoding_generator
 
@@ -172,48 +181,91 @@ def encode_categoricals(X_all, y, features_to_use, categoricals=None, **kwargs):
     if categoricals is None:
         categoricals = X_all.select_dtypes(object).columns
 
+    transformers = []
     for feature in trange(categoricals):
-        X = generic_change(
+        X, act_transformers = generic_change(
             X,
             y,
             stage_name="Encoding categoricals {}".format(feature),
             generator=get_encoding_generator(X_all[feature], y),
             **kwargs
         )
-    return X
+        transformers.extend(act_transformers)
+    return X, transformers
 
 
 def recode_categoricals(X, y, max_unique=10, **kwargs):
     nunique = X.nunique()
     categoricals = [f for f in nunique.index if nunique[f] <= max_unique]
     print("Trying to recode following categorical values:", categoricals)
+    transformers = []
     for feature in trange(categoricals):
-        X = generic_change(
+        X, act_transformers = generic_change(
             X,
             y,
             stage_name="Recoding {}".format(feature),
             generator=get_encoding_generator(X[feature], y, drop=True),
             **kwargs
         )
-    return X
+        transformers.extend(act_transformers)
+    return X, transformers
 
 
-def auto_ml(X, y, **kwargs):
-    X_ = basic_preprocess(X)
-    X_ = find_best_subset(X_, y, **kwargs)
-    X_ = encode_categoricals(X, y, X_.columns, **kwargs)
-    X_ = recode_categoricals(X_, y, **kwargs)
+def auto_ml(X, y, model_path=None, **kwargs):
+    X_, trans_basic = basic_preprocess(X.copy())
+    X_, trans_subset = find_best_subset(X_, y, **kwargs)
+    X_, trans_encode = encode_categoricals(X, y, X_.columns, **kwargs)
+    X_, trans_decode = recode_categoricals(X_, y, **kwargs)
+    trans_reodred = [ReorderColumnsTransformer(list(X_.columns))]
     cols = sorted([x for x in X_.columns])
     print("Final features:", cols)
+    transformers = (
+        trans_basic + trans_subset + trans_encode + trans_decode + trans_reodred
+    )
+    if model_path:
+        save_object(transformers, model_path)
+
     return X_
 
 
-if __name__ == "__main__":
-    import sys
+def predict(X, transformers):
+    for tr in transformers:
+        print(tr, "\n")
+        X = tr.transform(X)
 
-    file = sys.argv[1]
-    target = sys.argv[2]
+    print("Final Cols:", list(X.columns))
+    return X
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="CLI AutoML Tool")
+    parser.add_argument("input", type=str, help="input csv path")
+    parser.add_argument("target", type=str, help="target name str")
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        help="model pickle path",
+        default="transformers.pickle",
+    )
+    parser.add_argument(
+        "--predict",
+        action="store_true",
+        default=False,
+        help="make prediction (default: train a model)",
+    )
+    args = parser.parse_args()
+
+    file = args.input
+    target = args.target
+    model_file = args.model_path
+
     X = pd.read_csv(file)
-    y = X[target]
-    X = X.drop(target, axis=1)
-    X_ = auto_ml(X, y)
+    if args.predict:
+        transformers = load_object(model_file)
+        predict(X, transformers)
+    else:
+        y = X[target]
+        X = X.drop(target, axis=1)
+        X_ = auto_ml(X, y)

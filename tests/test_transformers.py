@@ -1,6 +1,10 @@
 import pytest
 import pandas as pd
-from barusini.transformers import TargetEncoder
+from barusini.transformers import (
+    TargetEncoder,
+    CustomOneHotEncoder,
+    CustomLabelEncoder,
+)
 
 
 @pytest.fixture(scope="session")
@@ -11,6 +15,15 @@ def simple_data():
     return X, y
 
 
+@pytest.fixture(scope="session")
+def more_data(simple_data):
+    X, y = simple_data
+    X = X.copy()
+    X["b"] = 0
+    X["c"] = "c"
+    return X, y
+
+
 def test_target_encoding_test(simple_data):
     #  GIVEN simple dataset
     X, y = simple_data
@@ -18,7 +31,7 @@ def test_target_encoding_test(simple_data):
     # WHEN `fit` and `transform` is called
     te = TargetEncoder()
     te.fit(X, y)
-    transformed_X = te.transform(X)
+    transformed_X = te.transform(X)[te.target_name]
 
     # THEN index is the same as index of input DataFrame:
     assert all(X.index == transformed_X.index)
@@ -35,7 +48,7 @@ def test_target_encoding_train(simple_data):
     # on fitted encoder
     te = TargetEncoder()
     transformed_X = te.fit_transform(X, y)
-    transformed_X2 = te.transform(X, True)
+    transformed_X2 = te.transform(X, train_data=True)
 
     # THEN index is the same as index of the input DataFrame:
     assert all(X.index == transformed_X.index)
@@ -43,5 +56,120 @@ def test_target_encoding_train(simple_data):
 
     # THEN transformed data matches expectation
     expected = [5, 6, 4.5, 5.5, 4, 5, 3.5, 4.5, 3, 4]
-    assert all(transformed_X == expected)
-    assert all(transformed_X2 == expected)
+    assert all(transformed_X[te.target_name] == expected)
+    assert all(transformed_X2[te.target_name] == expected)
+    assert transformed_X.shape[1] == transformed_X2.shape[1] == 1
+
+
+def test_te_with_more_cols(more_data):
+    #  GIVEN simple dataset with additional columns
+    X, y = more_data
+
+    # WHEN `fit(X, y)` is called on Target encoder using pd.Series or
+    # pd.DataFrame
+    te1 = TargetEncoder()
+    te2 = TargetEncoder()
+    te1.fit(X["a"], y)
+    te2.fit(X[["a"]], y)
+
+    # THEN `transform` on larger pd.DataFrame contains additional columns and
+    # results match expectations
+    transformed_X1 = te1.transform(X)
+    transformed_X2 = te2.transform(X)
+    assert all(X.index == transformed_X1.index)
+    assert all(X.index == transformed_X2.index)
+
+    expected = [4, 5] * 5
+    assert all(transformed_X1[te1.target_name] == expected)
+    assert all(transformed_X2[te2.target_name] == expected)
+
+    assert transformed_X1.shape[1] == transformed_X2.shape[1] == 3
+
+
+def test_ohe_encoding(simple_data):
+    #  GIVEN simple dataset
+    X, y = simple_data
+
+    # WHEN `fit_transform(X)` is called on OHE transformer
+    ohe = CustomOneHotEncoder()
+    transformed_X = ohe.fit_transform(X)
+
+    # THEN index is the same as index of the input DataFrame:
+    assert all(X.index == transformed_X.index)
+
+    # THEN transformed data matches expectation
+    expected_a = [1, 0] * 5
+    expected_b = [0, 1] * 5
+    assert all(transformed_X.iloc[:, 0] == expected_a)
+    assert all(transformed_X.iloc[:, 1] == expected_b)
+    assert transformed_X.shape[1] == 2
+
+
+def test_ohe_with_more_cols(more_data):
+    #  GIVEN simple dataset with additional columns
+    X, y = more_data
+
+    # WHEN `fit(X)` is called on OHE encoder using pd.Series or
+    # pd.DataFrame
+    ohe1 = CustomOneHotEncoder()
+    ohe2 = CustomOneHotEncoder()
+    ohe1.fit(X["a"])
+    ohe2.fit(X[["a"]])
+
+    # THEN `transform` on larger pd.DataFrame contains additional columns and
+    # results match expectations
+    transformed_X1 = ohe1.transform(X)
+    transformed_X2 = ohe2.transform(X)
+    assert all(X.index == transformed_X1.index)
+    assert all(X.index == transformed_X2.index)
+
+    expected_a = [1, 0] * 5
+    expected_b = [0, 1] * 5
+    assert all(transformed_X1["a [OHE:a]"] == expected_a)
+    assert all(transformed_X1["a [OHE:b]"] == expected_b)
+    assert all(transformed_X2["a [OHE:a]"] == expected_a)
+    assert all(transformed_X2["a [OHE:b]"] == expected_b)
+
+    assert transformed_X1.shape[1] == transformed_X2.shape[1] == 4
+
+
+def test_le_encoding(simple_data):
+    #  GIVEN simple dataset
+    X, y = simple_data
+
+    # WHEN `fit_transform(X)` is called on LE transformer
+    le = CustomLabelEncoder()
+    transformed_X = le.fit_transform(X)
+
+    # THEN index is the same as index of the input DataFrame:
+    assert all(X.index == transformed_X.index)
+
+    # THEN transformed data matches expectation
+    expected = [0, 1] * 5
+    assert all(transformed_X.iloc[:, 0] == expected)
+    assert transformed_X.shape[1] == 1
+
+
+def test_le_with_more_cols(more_data):
+    #  GIVEN simple dataset with additional columns
+    X, y = more_data
+
+    # WHEN `fit(X)` is called on LE encoder using pd.Series or
+    # pd.DataFrame
+    le1 = CustomLabelEncoder()
+    le2 = CustomLabelEncoder()
+    le1.fit(X["a"])
+    le2.fit(X[["a"]])
+
+    # THEN `transform` on larger pd.DataFrame contains additional columns and
+    # results match expectations
+    transformed_X1 = le1.transform(X)
+    transformed_X2 = le2.transform(X)
+    assert all(X.index == transformed_X1.index)
+    assert all(X.index == transformed_X2.index)
+
+    expected = [0, 1] * 5
+    assert all(transformed_X1["a [LE]"] == expected)
+    assert all(transformed_X2["a [LE]"] == expected)
+
+    assert transformed_X1.shape[1] == transformed_X2.shape[1] == 3
