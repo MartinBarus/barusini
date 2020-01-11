@@ -244,7 +244,7 @@ if __name__ == "__main__":
     parser.add_argument("input", type=str, help="input csv path")
     parser.add_argument("target", type=str, help="target name str")
     parser.add_argument(
-        "--model_path",
+        "--model",
         type=str,
         help="model pickle path",
         default="transformers.pickle",
@@ -259,7 +259,7 @@ if __name__ == "__main__":
 
     file = args.input
     target = args.target
-    model_file = args.model_path
+    model_file = args.model
 
     X = pd.read_csv(file)
     if args.predict:
@@ -268,4 +268,4 @@ if __name__ == "__main__":
     else:
         y = X[target]
         X = X.drop(target, axis=1)
-        X_ = auto_ml(X, y)
+        X_ = auto_ml(X, y, model_path=model_file)
