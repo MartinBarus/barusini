@@ -7,29 +7,64 @@
 # permission of Martin Barus or Miroslav Barus
 ####################################################################
 
+import copy
+import numpy as np
 import pandas as pd
+import time
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 
 from barusini.transformers import (
-    ColumnDropTransformer,
     CustomOneHotEncoder,
     CustomLabelEncoder,
     MissingValueImputer,
-    ReorderColumnsTransformer,
+    Pipeline,
     TargetEncoder,
 )
-from barusini.utils import get_terminal_size, load_object, save_object
+from barusini.utils import (
+    format_time,
+    get_terminal_size,
+    load_object,
+    save_object,
+)
 
 
-ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1)
-CV = StratifiedKFold(n_splits=3)
-METRIC = "roc_auc"
+ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+CV = StratifiedKFold(n_splits=3, random_state=42)
+SCORER = roc_auc_score
 MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 ALLOWED_CAT_ENCODERS = [CustomOneHotEncoder, CustomLabelEncoder, TargetEncoder]
+ALLOWED_CAT_ENCODERS = [CustomLabelEncoder]
+
+
+def validation(models, X, y, splits, scores, scoring, i):
+    train, test = splits[i]
+
+    trn_X = X.loc[train]
+    trn_y = y.loc[train]
+    models[i].fit(trn_X, trn_y)
+
+    tst_X = X.loc[test]
+    tst_y = y.loc[test]
+    predictions = models[i].predict(tst_X)
+    score = scoring(tst_y, predictions)
+    scores[i] = score
+
+
+def cross_val_score(model, X, y, cv, scoring, n_jobs):
+    n_folds = cv.n_splits
+    scores = [None for i in range(n_folds)]
+    models = [copy.deepcopy(model) for i in range(n_folds)]
+    splits = list(cv.split(X, y))
+
+    for i in range(n_folds):
+        validation(models, X, y, splits, scores, scoring, i)
+
+    return np.mean(scores)
 
 
 def format_str(x, total_len=TERMINAL_COLS):
@@ -52,47 +87,42 @@ def is_new_better(old, new, maximize):
     return new <= old
 
 
-def clean_missing(X):
-    imputer = MissingValueImputer()
-    X = imputer.fit_transform(X)
-
-    return X, imputer
-
-
-def drop_categoricals(X):
-    dropped_cols = X.select_dtypes(object).columns
-    dropper = ColumnDropTransformer(dropped_cols)
-    X = dropper.transform(X)
-
-    return X, dropper
-
-
 def drop_uniques(X, thr=0.99):
     nunique = X.nunique()
     dropped_cols = []
     for x in nunique.index:
         if (nunique[x] / X.shape[0]) >= thr:
             dropped_cols.append(x)
-    dropper = ColumnDropTransformer(dropped_cols)
-    X = dropper.transform(X)
 
-    return X, dropper
+    return dropped_cols
+
+
+def subset_numeric_features(X):
+    ignored_columns = X.select_dtypes(object).columns
+    numeric_columns = [col for col in X if col not in ignored_columns]
+    X = X[numeric_columns]
+    return X
 
 
 def basic_preprocess(X):
-    X, unique_dropper = drop_uniques(X)
-    X, categorical_dropper = drop_categoricals(X)
-    X, imputer = clean_missing(X)
-    transformers = [unique_dropper, categorical_dropper, imputer]
+    X = subset_numeric_features(X)
+    dropped = drop_uniques(X)
+    transformers = []
+    for column in X:
+        if column not in dropped:
+            transformers.append(MissingValueImputer(column))
 
-    return X, transformers
+    pipeline = Pipeline(transformers, ESTIMATOR)
+    pipeline.fit(X, y)
+    return pipeline
 
 
-def feature_reduction_generator(X):
-    for i in trange(X.shape[1]):
-        col = X.columns[i]
-        transformer = ColumnDropTransformer([col])
-        yield transformer.transform(X), [transformer]
+def feature_reduction_generator(model):
+    for idx in trange(len(model.transformers)):
+        new_model = copy.deepcopy(model)
+        # print("Deleting", new_model.transformers[idx])
+        del new_model.transformers[idx]
+        yield new_model
 
 
 def dummy_base_line(x):
@@ -100,138 +130,136 @@ def dummy_base_line(x):
 
 
 def generic_change(
-    X_old,
+    X,
     y,
+    model_pipeline,
     stage_name=STAGE_NAME,
     cv=CV,
-    estimator=ESTIMATOR,
-    metric=METRIC,
+    metric=SCORER,
     maximize=MAXIMIZE,
     generator=None,
     recursive=False,
 ):
     print(format_str("Starting stage {}".format(stage_name)))
-    X = X_old.copy()
     base_score = cross_val_score(
-        estimator, X, y, cv=cv, n_jobs=-1, scoring=metric
+        model_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric
     ).mean()
     print("BASE", base_score)
     original_best = base_score
-    transformers = []
+    old_cols = list(model_pipeline.transform(X).columns)
     while True:
-        act_best = None
-        transformers_best = None
-        for X_act, transformers_act in generator(X):
+        best_pipeline = None
+        for act_pipeline in generator(model_pipeline):
             act_score = cross_val_score(
-                estimator, X_act, y, cv=cv, n_jobs=-1, scoring=metric
+                act_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric
             ).mean()
             if is_new_better(base_score, act_score, maximize):
                 base_score = act_score
-                act_best = X_act
-                transformers_best = transformers_act
+                best_pipeline = act_pipeline
 
-        if act_best is not None:
-            X = act_best
-            transformers.extend(transformers_best)
+        if best_pipeline is not None:
+            model_pipeline = best_pipeline
+            model_pipeline.fit(X, y)
             print("CURRENT BEST", base_score)
         else:
             break
         if not recursive:
             break
+
+    new_cols = list(model_pipeline.transform(X).columns)
     print("ORIGINAL BEST", original_best)
     print("NEW BEST", base_score)
     print("DIFF", abs(base_score - original_best))
-    print("Dropped", [x for x in X_old.columns if x not in X.columns])
-    print("Left", [x for x in X.columns])
-    print("New", [x for x in X.columns if x not in X_old.columns])
+    print("Dropped", [x for x in old_cols if x not in new_cols])
+    # print("Left", [x for x in old_cols if x in new_cols])
+    print("New", [x for x in new_cols if x not in old_cols])
     print(format_str("Stage {} finished".format(stage_name)))
-    return X, transformers
+    return model_pipeline
 
 
-def find_best_subset(X, y, **kwargs):
+def find_best_subset(X, y, model, **kwargs):
     return generic_change(
         X,
         y,
+        model,
         stage_name="Finding best subset",
         generator=feature_reduction_generator,
         recursive=True,
-        **kwargs
+        **kwargs,
     )
 
 
-def get_encoding_generator(feature, target, drop=False):
-    def categorical_encoding_generator(X):
+def get_encoding_generator(feature, drop=False):
+    def categorical_encoding_generator(model):
         encoders = ALLOWED_CAT_ENCODERS
         for enc_class in trange(encoders):
-            enc = enc_class()
-            new = enc.fit_transform(feature, target)
-
+            enc = enc_class(used_cols=[feature])
+            new_model = copy.deepcopy(model)
             if drop:
-                X_ = X.drop(feature.name, axis=1)
-            else:
-                X_ = X
-            X_ = X_.join(new)
-            yield X_, [enc]
+                new_model.remove_transformers([feature], partial_match=False)
+            new_model = new_model.add_transformators([enc])
+            yield new_model
 
     return categorical_encoding_generator
 
 
-def encode_categoricals(X_all, y, features_to_use, categoricals=None, **kwargs):
-    X = X_all[features_to_use]
-    if categoricals is None:
-        categoricals = X_all.select_dtypes(object).columns
-
-    transformers = []
+def encode_categoricals(X, y, model, **kwargs):
+    X_ = model.transform(X)
+    categoricals = X_.select_dtypes(object).columns
+    del X_
+    print("Encoding stage for ", categoricals)
     for feature in trange(categoricals):
-        X, act_transformers = generic_change(
+        model = generic_change(
             X,
             y,
+            model,
             stage_name="Encoding categoricals {}".format(feature),
-            generator=get_encoding_generator(X_all[feature], y),
-            **kwargs
+            generator=get_encoding_generator(feature),
+            **kwargs,
         )
-        transformers.extend(act_transformers)
-    return X, transformers
+    return model
 
 
-def recode_categoricals(X, y, max_unique=10, **kwargs):
-    nunique = X.nunique()
+def recode_categoricals(X, y, model, max_unique=50, **kwargs):
+
+    transformed_X = model.transform(X)
+    transformed_X = subset_numeric_features(transformed_X)
+    used = [c for c in transformed_X if c in model.used_cols]
+    transformed_X = transformed_X[used]
+    nunique = transformed_X.nunique()
     categoricals = [f for f in nunique.index if nunique[f] <= max_unique]
+    categoricals = [c for c in categoricals if "[" not in c]
     print("Trying to recode following categorical values:", categoricals)
-    transformers = []
     for feature in trange(categoricals):
-        X, act_transformers = generic_change(
+        model = generic_change(
             X,
             y,
+            model,
             stage_name="Recoding {}".format(feature),
-            generator=get_encoding_generator(X[feature], y, drop=True),
-            **kwargs
+            generator=get_encoding_generator(feature, drop=True),
+            **kwargs,
         )
-        transformers.extend(act_transformers)
-    return X, transformers
+    return model
 
 
 def auto_ml(X, y, model_path=None, **kwargs):
-    X_, trans_basic = basic_preprocess(X.copy())
-    X_, trans_subset = find_best_subset(X_, y, **kwargs)
-    X_, trans_encode = encode_categoricals(X, y, X_.columns, **kwargs)
-    X_, trans_decode = recode_categoricals(X_, y, **kwargs)
-    trans_reodred = [ReorderColumnsTransformer(list(X_.columns))]
-    cols = sorted([x for x in X_.columns])
-    print("Final features:", cols)
-    transformers = (
-        trans_basic + trans_subset + trans_encode + trans_decode + trans_reodred
-    )
+    model = basic_preprocess(X.copy())
+    model = find_best_subset(X, y, model, **kwargs)
+    model = encode_categoricals(X, y, model, **kwargs)
+    model = recode_categoricals(X, y, model, **kwargs)
     if model_path:
-        save_object(transformers, model_path)
+        save_object(model, model_path)
 
-    return X_
+    cols = sorted(list(model.transform(X).columns))
+    # trans_reodred = [ReorderColumnsTransformer(list(X_.columns))]
+    print("Final features:", cols)
+
+    return model
 
 
-def predict(X, transformers):
-    for tr in transformers:
-        print(tr, "\n")
-        X = tr.transform(X)
+def predict(X, model):
+    print(model)
+    X = model.transform(X)
 
     print("Final Cols:", list(X.columns))
     return X
@@ -240,6 +268,7 @@ def predict(X, transformers):
 if __name__ == "__main__":
     import argparse
 
+    start = time.time()
     parser = argparse.ArgumentParser(description="CLI AutoML Tool")
     parser.add_argument("input", type=str, help="input csv path")
     parser.add_argument("target", type=str, help="target name str")
@@ -269,3 +298,7 @@ if __name__ == "__main__":
         y = X[target]
         X = X.drop(target, axis=1)
         X_ = auto_ml(X, y, model_path=model_file)
+
+    duration = (time.time() - start) / 60
+    duration = format_time(duration)
+    print(f"Duration: {duration}")
