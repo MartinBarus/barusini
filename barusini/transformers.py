@@ -60,11 +60,13 @@ class Pipeline(Transformer):
         super().__init__()
         self.transformers = transformers
         self.model = model
+        self.target = None
 
     def fit(self, X, y, **kwargs):
         X_transformed = self.fit_transform(X, y, **kwargs)
         X_transformed = X_transformed[self.used_cols]
         self.model.fit(X_transformed, y)
+        self.target = y.name
         return self
 
     def transform(self, X, **kwargs):
@@ -86,6 +88,10 @@ class Pipeline(Transformer):
     def predict(self, X):
         X_transformed = self.transform(X)
         return self.model.predict(X_transformed[self.used_cols])
+
+    def predict_proba(self, X):
+        X_transformed = self.transform(X)
+        return self.model.predict_proba(X_transformed[self.used_cols])
 
     def add_transformators(self, transformers):
         orig_transformers = [copy.deepcopy(x) for x in self.transformers]

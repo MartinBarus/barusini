@@ -15,6 +15,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
+from joblib import Parallel, delayed
 
 from barusini.transformers import (
     CustomOneHotEncoder,
@@ -38,31 +39,31 @@ MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 ALLOWED_CAT_ENCODERS = [CustomOneHotEncoder, CustomLabelEncoder, TargetEncoder]
-ALLOWED_CAT_ENCODERS = [CustomLabelEncoder]
+# ALLOWED_CAT_ENCODERS = [CustomLabelEncoder]
 
 
-def validation(models, X, y, splits, scores, scoring, i):
-    train, test = splits[i]
+def validation(model, X, y, train, test, scoring):
+    # train, test = splits[i]
 
     trn_X = X.loc[train]
     trn_y = y.loc[train]
-    models[i].fit(trn_X, trn_y)
+    model.fit(trn_X, trn_y)
 
     tst_X = X.loc[test]
     tst_y = y.loc[test]
-    predictions = models[i].predict(tst_X)
+    predictions = model.predict(tst_X)
     score = scoring(tst_y, predictions)
-    scores[i] = score
+    return score
 
 
 def cross_val_score(model, X, y, cv, scoring, n_jobs):
-    n_folds = cv.n_splits
-    scores = [None for i in range(n_folds)]
-    models = [copy.deepcopy(model) for i in range(n_folds)]
-    splits = list(cv.split(X, y))
-
-    for i in range(n_folds):
-        validation(models, X, y, splits, scores, scoring, i)
+    parallel = Parallel(n_jobs=n_jobs, verbose=False,
+                        pre_dispatch='2*n_jobs')
+    scores = parallel(
+        delayed(validation)(
+            copy.deepcopy(model), X, y, train, test, scoring,
+            )
+        for train, test in cv.split(X, y))
 
     return np.mean(scores)
 
@@ -257,12 +258,25 @@ def auto_ml(X, y, model_path=None, **kwargs):
     return model
 
 
-def predict(X, model):
+def predict(X, model, included_columns, output_path):
     print(model)
-    X = model.transform(X)
+    res = None
+    if included_columns:
+        res = X[included_columns].copy()
+    predict = model.predict(X)
+    if res is not None:
+        target = "Survived"
+        try:
+            target = model.target
+        except:
+            pass
 
-    print("Final Cols:", list(X.columns))
-    return X
+        res[target] = predict
+    else:
+        res = pd.Series(predict)
+
+    res.to_csv(output_path, index=False)
+    return res
 
 
 if __name__ == "__main__":
@@ -271,7 +285,7 @@ if __name__ == "__main__":
     start = time.time()
     parser = argparse.ArgumentParser(description="CLI AutoML Tool")
     parser.add_argument("input", type=str, help="input csv path")
-    parser.add_argument("target", type=str, help="target name str")
+    parser.add_argument("--target", type=str, help="target name str")
     parser.add_argument(
         "--model",
         type=str,
@@ -284,6 +298,19 @@ if __name__ == "__main__":
         default=False,
         help="make prediction (default: train a model)",
     )
+
+    parser.add_argument(
+        "--include",
+        metavar='N', type=str, nargs='+',
+        help="include original columns",
+    )
+
+    parser.add_argument(
+        "--output",
+        type=str,
+        help="output csv path",
+        default="predictions.csv"
+    )
     args = parser.parse_args()
 
     file = args.input
@@ -293,12 +320,11 @@ if __name__ == "__main__":
     X = pd.read_csv(file)
     if args.predict:
         transformers = load_object(model_file)
-        predict(X, transformers)
+        predict(X, transformers, args.include, args.output)
     else:
         y = X[target]
         X = X.drop(target, axis=1)
         X_ = auto_ml(X, y, model_path=model_file)
 
-    duration = (time.time() - start) / 60
-    duration = format_time(duration)
+    duration = format_time(time.time() - start)
     print(f"Duration: {duration}")
