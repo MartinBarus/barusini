@@ -106,15 +106,15 @@ class Pipeline(Transformer):
         return match and len(columns) == len(transformer.used_cols)
 
     def remove_transformers(self, columns, partial_match=False):
-        removed_trasformers = [
-            x
-            for x in self.transformers
-            if self._match_name(x, columns, partial_match)
-        ]
-
-        print("Removed following transformers:")
-        for transformer in removed_trasformers:
-            print(transformer)
+        # removed_trasformers = [
+        #     x
+        #     for x in self.transformers
+        #     if self._match_name(x, columns, partial_match)
+        # ]
+        #
+        # print("Removed following transformers:")
+        # for transformer in removed_trasformers:
+        #     print(transformer)
 
         self.transformers = [
             x
@@ -266,11 +266,14 @@ class Encoder(Transformer):
         x[self.used_cols] = self.replace_unseen(x[self.used_cols])
         return x
 
-    def get_unseen_repalce_map(self, X):
+    def get_unseen_replace_map(self, X):
         new_frequencies = self.get_frequencies(X)
         unseen_values = [
             x for x in new_frequencies.index if x not in self.frequencies.index
         ]
+        n_unseen = len(unseen_values)
+        if n_unseen:
+            print(f"WARNING!: {n_unseen} unseen values for {self.used_cols}")
 
         replace_map = {}
         for unseen in unseen_values:
@@ -291,7 +294,7 @@ class Encoder(Transformer):
         return replace_map
 
     def replace_unseen(self, X):
-        replace_map = self.get_unseen_repalce_map(X)
+        replace_map = self.get_unseen_replace_map(X)
         for old, new in replace_map.items():
             to_replace = {col: val for col, val in zip(self.used_cols, old)}
             value = {col: val for col, val in zip(self.used_cols, new)}

@@ -39,7 +39,7 @@ MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 ALLOWED_CAT_ENCODERS = [CustomOneHotEncoder, CustomLabelEncoder, TargetEncoder]
-# ALLOWED_CAT_ENCODERS = [CustomLabelEncoder]
+MAX_RELATIVE_CARDINALITY = 0.9
 
 
 def validation(model, X, y, train, test, scoring):
@@ -57,13 +57,11 @@ def validation(model, X, y, train, test, scoring):
 
 
 def cross_val_score(model, X, y, cv, scoring, n_jobs):
-    parallel = Parallel(n_jobs=n_jobs, verbose=False,
-                        pre_dispatch='2*n_jobs')
+    parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
     scores = parallel(
-        delayed(validation)(
-            copy.deepcopy(model), X, y, train, test, scoring,
-            )
-        for train, test in cv.split(X, y))
+        delayed(validation)(copy.deepcopy(model), X, y, train, test, scoring)
+        for train, test in cv.split(X, y)
+    )
 
     return np.mean(scores)
 
@@ -210,6 +208,8 @@ def encode_categoricals(X, y, model, **kwargs):
     del X_
     print("Encoding stage for ", categoricals)
     for feature in trange(categoricals):
+        if X[feature].nunique() / X.shape[0] > MAX_RELATIVE_CARDINALITY:
+            continue  # Skip
         model = generic_change(
             X,
             y,
@@ -258,25 +258,29 @@ def auto_ml(X, y, model_path=None, **kwargs):
     return model
 
 
-def predict(X, model, included_columns, output_path):
+def predict(X, model, included_columns, output_path, probability):
     print(model)
-    res = None
+    included = None
     if included_columns:
-        res = X[included_columns].copy()
-    predict = model.predict(X)
-    if res is not None:
-        target = "Survived"
-        try:
-            target = model.target
-        except:
-            pass
-
-        res[target] = predict
+        included = X[included_columns].copy()
+    if probability:
+        predicted = model.predict_proba(X)
     else:
-        res = pd.Series(predict)
+        predicted = model.predict(X)
 
-    res.to_csv(output_path, index=False)
-    return res
+    if len(predicted.shape) == 1:
+        cols = [model.target]
+    else:
+        cols = [f"{model.target}.{i}" for i in range(predicted.shape[1])]
+
+    predicted = pd.DataFrame(predicted, columns=cols)
+    if included is not None:
+        predicted = included.reset_index(drop=True).join(
+            predicted.reset_index(drop=True)
+        )
+
+    predicted.to_csv(output_path, index=False)
+    return predicted
 
 
 if __name__ == "__main__":
@@ -300,16 +304,30 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--predict-proba",
+        action="store_true",
+        default=False,
+        help="predict probability (default: train a model)",
+    )
+
+    parser.add_argument(
+        "--drop",
+        metavar="N",
+        type=str,
+        nargs="+",
+        help="drop original columns",
+    )
+
+    parser.add_argument(
         "--include",
-        metavar='N', type=str, nargs='+',
+        metavar="N",
+        type=str,
+        nargs="+",
         help="include original columns",
     )
 
     parser.add_argument(
-        "--output",
-        type=str,
-        help="output csv path",
-        default="predictions.csv"
+        "--output", type=str, help="output csv path", default="predictions.csv"
     )
     args = parser.parse_args()
 
@@ -318,12 +336,13 @@ if __name__ == "__main__":
     model_file = args.model
 
     X = pd.read_csv(file)
-    if args.predict:
+    if args.predict or args.predict_proba:
         transformers = load_object(model_file)
-        predict(X, transformers, args.include, args.output)
+        predict(X, transformers, args.include, args.output, args.predict_proba)
     else:
         y = X[target]
-        X = X.drop(target, axis=1)
+        dropped = args.drop + [target]
+        X = X.drop(dropped, axis=1)
         X_ = auto_ml(X, y, model_path=model_file)
 
     duration = format_time(time.time() - start)
