@@ -42,30 +42,6 @@ ALLOWED_CAT_ENCODERS = [CustomOneHotEncoder, CustomLabelEncoder, TargetEncoder]
 MAX_RELATIVE_CARDINALITY = 0.9
 
 
-def validation(model, X, y, train, test, scoring):
-    # train, test = splits[i]
-
-    trn_X = X.loc[train]
-    trn_y = y.loc[train]
-    model.fit(trn_X, trn_y)
-
-    tst_X = X.loc[test]
-    tst_y = y.loc[test]
-    predictions = model.predict(tst_X)
-    score = scoring(tst_y, predictions)
-    return score
-
-
-def cross_val_score(model, X, y, cv, scoring, n_jobs):
-    parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
-    scores = parallel(
-        delayed(validation)(copy.deepcopy(model), X, y, train, test, scoring)
-        for train, test in cv.split(X, y)
-    )
-
-    return np.mean(scores)
-
-
 def format_str(x, total_len=TERMINAL_COLS):
     middle = total_len // 2
     num_paddings = middle - len(x) // 2 - 1
@@ -128,6 +104,56 @@ def dummy_base_line(x):
     return x
 
 
+def validation(model, X, y, train, test, scoring):
+    trn_X = X.loc[train]
+    trn_y = y.loc[train]
+    model.fit(trn_X, trn_y)
+
+    tst_X = X.loc[test]
+    tst_y = y.loc[test]
+    predictions = model.predict(tst_X)
+    score = scoring(tst_y, predictions)
+    return score
+
+
+def cross_val_score(model, X, y, cv, scoring, n_jobs):
+    parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
+    scores = parallel(
+        delayed(validation)(copy.deepcopy(model), X, y, train, test, scoring)
+        for train, test in cv.split(X, y)
+    )
+
+    return np.mean(scores), model
+
+
+def best_alternative_model(
+    alternative_pipelines,
+    base_score,
+    maximize,
+    cv,
+    metric,
+    cv_n_jobs,
+    alternative_n_jobs,
+):
+    parallel = Parallel(
+        n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
+    )
+    result = parallel(
+        delayed(cross_val_score)(
+            pipeline, X, y, cv=cv, scoring=metric, n_jobs=cv_n_jobs
+        )
+        for pipeline in alternative_pipelines
+    )
+
+    best_pipeline = None
+    for act_score, act_pipeline in result:
+        if is_new_better(base_score, act_score, maximize):
+            base_score = act_score
+            best_pipeline = act_pipeline
+
+    return best_pipeline, base_score
+
+
 def generic_change(
     X,
     y,
@@ -138,24 +164,26 @@ def generic_change(
     maximize=MAXIMIZE,
     generator=None,
     recursive=False,
+    cv_n_jobs=-1,
+    alternative_n_jobs=1,
 ):
     print(format_str("Starting stage {}".format(stage_name)))
-    base_score = cross_val_score(
+    base_score, _ = cross_val_score(
         model_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric
-    ).mean()
+    )
     print("BASE", base_score)
     original_best = base_score
     old_cols = list(model_pipeline.transform(X).columns)
     while True:
-        best_pipeline = None
-        for act_pipeline in generator(model_pipeline):
-            act_score = cross_val_score(
-                act_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric
-            ).mean()
-            if is_new_better(base_score, act_score, maximize):
-                base_score = act_score
-                best_pipeline = act_pipeline
-
+        best_pipeline, base_score = best_alternative_model(
+            generator(model_pipeline),
+            base_score,
+            maximize,
+            cv,
+            metric,
+            cv_n_jobs,
+            alternative_n_jobs,
+        )
         if best_pipeline is not None:
             model_pipeline = best_pipeline
             model_pipeline.fit(X, y)
@@ -184,6 +212,8 @@ def find_best_subset(X, y, model, **kwargs):
         stage_name="Finding best subset",
         generator=feature_reduction_generator,
         recursive=True,
+        cv_n_jobs=1,
+        alternative_n_jobs=-1,
         **kwargs,
     )
 
@@ -311,11 +341,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--drop",
-        metavar="N",
-        type=str,
-        nargs="+",
-        help="drop original columns",
+        "--drop", metavar="N", type=str, nargs="+", help="drop original columns"
     )
 
     parser.add_argument(
@@ -341,7 +367,9 @@ if __name__ == "__main__":
         predict(X, transformers, args.include, args.output, args.predict_proba)
     else:
         y = X[target]
-        dropped = args.drop + [target]
+        dropped = args.drop
+        dropped = dropped if dropped else []
+        dropped = dropped + [target]
         X = X.drop(dropped, axis=1)
         X_ = auto_ml(X, y, model_path=model_file)
 
