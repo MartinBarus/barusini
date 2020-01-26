@@ -26,3 +26,25 @@ def save_object(o, path):
 def load_object(path):
     with open(path, "rb") as file:
         return pickle.load(file)
+
+
+def _format_time_helper(elapsed_time, unit, next_unit, max_value):
+    unit_changed = False
+    if elapsed_time > max_value:
+        elapsed_time /= max_value
+        unit = next_unit
+        unit_changed = True
+    return elapsed_time, unit, unit_changed
+
+
+def format_time(elapsed_time):
+    units = ["seconds", "minutes", "hours", "days", "years"]
+    max_values = [60, 60, 24, 365]
+    for i in range(len(max_values)):
+        elapsed_time, unit, unit_changed = _format_time_helper(
+            elapsed_time, units[i], units[i + 1], max_values[i]
+        )
+        if not unit_changed:
+            break
+
+    return f"{elapsed_time} {unit}"

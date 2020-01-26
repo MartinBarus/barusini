@@ -9,6 +9,7 @@
 
 
 from category_encoders import BinaryEncoder
+import copy
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 import numpy as np
@@ -18,10 +19,14 @@ TARGET_STR = "[TE]"  # default target name
 INDEX_STR = "index"  # default temporary index name
 
 
-def unique_name(X, name):
-    while name in X.columns:
+def unique_value(x, name):
+    while name in x:
         name += str(np.random.randint(10))
     return name
+
+
+def unique_name(X, name):
+    return unique_value(X.columns, name)
 
 
 def make_dataframe(X):
@@ -30,7 +35,170 @@ def make_dataframe(X):
     return X
 
 
-class MeanEncoder:
+class Transformer:
+    def __init__(self, used_cols=None):
+        self.used_cols = used_cols
+
+    def fit(self, X, *args, **kwargs):
+        raise ValueError("Fit method is not implemented")
+
+    def transform(self, X, **kwargs):
+        raise ValueError("Transform method is not implemented")
+
+    def fit_transform(self, X, *args, **kwargs):
+        self.fit(X, *args, **kwargs)
+        return self.transform(X, **kwargs)
+
+    def output_columns(self):
+        if self.used_cols is not None:
+            return self.used_cols
+        return []
+
+
+class Pipeline(Transformer):
+    def __init__(self, transformers, model):
+        super().__init__()
+        self.transformers = transformers
+        self.model = model
+        self.target = None
+
+    def fit(self, X, y, **kwargs):
+        X_transformed = self.fit_transform(X, y, **kwargs)
+        X_transformed = X_transformed[self.used_cols]
+        self.model.fit(X_transformed, y)
+        self.target = y.name
+        return self
+
+    def transform(self, X, **kwargs):
+        for transformer in self.transformers:
+            X = transformer.transform(X, **kwargs)
+        return X
+
+    def fit_transform(self, X, y, **kwargs):
+        self.used_cols = []
+        for transformer in self.transformers:
+            X = transformer.fit_transform(X, y, **kwargs)
+            self.used_cols.extend(transformer.output_columns())
+
+        # self.used_cols = list(X.columns)
+        self.used_cols = sorted(list(set(self.used_cols)))
+        # self.used_cols = [col for col in self.used_cols if col in X]
+        return X
+
+    def predict(self, X):
+        X_transformed = self.transform(X)
+        return self.model.predict(X_transformed[self.used_cols])
+
+    def predict_proba(self, X):
+        X_transformed = self.transform(X)
+        return self.model.predict_proba(X_transformed[self.used_cols])
+
+    def add_transformators(self, transformers):
+        orig_transformers = [copy.deepcopy(x) for x in self.transformers]
+        transformers = orig_transformers + transformers
+        return Pipeline(transformers, copy.deepcopy(self.model))
+
+    @staticmethod
+    def _match_name(transformer, columns, partial_match):
+        match = all([c in transformer.used_cols for c in columns])
+        if partial_match:
+            return match
+        return match and len(columns) == len(transformer.used_cols)
+
+    def remove_transformers(self, columns, partial_match=False):
+        # removed_trasformers = [
+        #     x
+        #     for x in self.transformers
+        #     if self._match_name(x, columns, partial_match)
+        # ]
+        #
+        # print("Removed following transformers:")
+        # for transformer in removed_trasformers:
+        #     print(transformer)
+
+        self.transformers = [
+            x
+            for x in self.transformers
+            if not self._match_name(x, columns, partial_match)
+        ]
+
+    def __str__(self):
+        str_representation = ""
+        for transformer in self.transformers:
+            str_representation += f"{str(transformer)}\n"
+
+        str_representation += f"{str(self.model)}"
+        return str_representation
+
+
+class ColumnDropTransformer(Transformer):
+    def __init__(self, columns_to_drop):
+        super().__init__()
+        self.columns_to_drop = columns_to_drop
+
+    def transform(self, X, **kwargs):
+        return X.drop(self.columns_to_drop, axis=1)
+
+    def fit(self, X, *args, **kwargs):
+        pass
+        # self.used_cols = [col for col in X if col not in self.columns_to_drop]
+
+    def __str__(self):
+        return f"Column Drop Transformer: {self.columns_to_drop}"
+
+
+class MissingValueImputer(Transformer):
+    def __init__(self, column):
+        self.missing = {}
+        # self.col_dropper = None
+        self.used_cols = [column]
+
+    def fit(self, X, *args, **kwargs):
+        # dropped = []
+        for col in self.used_cols:
+            min_val = X[col].min()
+            if pd.isna(min_val):
+                min_val = 0
+            imputed_value = min_val - 1
+
+            self.missing[col] = imputed_value
+        # self.col_dropper = ColumnDropTransformer(dropped)
+        return self
+
+    def transform(self, X, **kwargs):
+        # X = self.col_dropper.transform(X)
+        X = X.copy()
+        for col, value in self.missing.items():
+            if col in X:
+                x = X[col].fillna(value)
+                X[col] = x
+            else:
+                print(f"Warning!: Column {col} expected but nor found {self}")
+        return X
+
+    def __str__(self):
+        base = f"Missing Value Imputer: ["
+        for col, value in self.missing.items():
+            base += f"'{col}' imputed by '{value}'"
+        return base + "]"
+
+
+class ReorderColumnsTransformer(Transformer):
+    def __init__(self, columns):
+        self.columns = columns
+
+    def transform(self, X, **kwargs):
+        return X[self.columns]
+
+    def fit(self, *args, **kwargs):
+        # Nothing to do
+        pass
+
+    def __str__(self):
+        return f"Column Reorder/Subset transformer: '{self.columns}'"
+
+
+class MeanEncoder(Transformer):
     def __init__(self):
         self.mean = None
         self.columns = None
@@ -38,7 +206,7 @@ class MeanEncoder:
         self.missing_value = None
         self.target_name = None
 
-    def fit(self, X, y, target_name=None):
+    def fit(self, X, y, target_name=None, **kwargs):
         if target_name is None:
             target_name = unique_name(X, TARGET_STR)
         y = pd.DataFrame({target_name: y})
@@ -49,7 +217,7 @@ class MeanEncoder:
         self.missing_value = x[target_name].min() - 1
         return self
 
-    def transform(self, X):
+    def transform(self, X, **kwargs):
         orig_index_name = X.index.name
         index_name = unique_name(X, INDEX_STR)
         X.index.name = index_name
@@ -64,16 +232,81 @@ class MeanEncoder:
         X[self.target_name] = X[self.target_name].fillna(self.missing_value)
         return X.sort_index()
 
-    def fit_transform(self, X, y, **kwargs):
-        self.fit(X, y, **kwargs)
-        return self.transform(X)
-
     def __str__(self):
         return f"Mean encoder for feature '{self.target_name}':\n\t{self.mean}"
 
 
-class TargetEncoder:
-    def __init__(self, fold=None, random_seed=42, encoder=MeanEncoder):
+class Encoder(Transformer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.frequencies = None
+        self.unseen_value = None
+
+    def get_frequencies(self, X):
+        new_x = make_dataframe(X[self.used_cols]).copy()
+        new_x["cnt"] = 1
+        return new_x.groupby(self.used_cols).count()["cnt"] / X.shape[0]
+
+    def fit_unseen_values(self, X):
+        self.unseen_value = unique_value(X.values[:], "MISS")
+
+    def fit_frequencies(self, X):
+        self.frequencies = self.get_frequencies(X)
+
+    def fit(self, X):
+        X = make_dataframe(X)
+        if self.used_cols is None:
+            self.used_cols = list(X.columns)
+        self.fit_unseen_values(X)
+        self.fit_frequencies(X)
+
+    def preprocess(self, X):
+        x = make_dataframe(X)
+        x[self.used_cols] = x[self.used_cols].fillna(self.unseen_value)
+        x[self.used_cols] = self.replace_unseen(x[self.used_cols])
+        return x
+
+    def get_unseen_replace_map(self, X):
+        new_frequencies = self.get_frequencies(X)
+        unseen_values = [
+            x for x in new_frequencies.index if x not in self.frequencies.index
+        ]
+        n_unseen = len(unseen_values)
+        if n_unseen:
+            print(f"WARNING!: {n_unseen} unseen values for {self.used_cols}")
+
+        replace_map = {}
+        for unseen in unseen_values:
+            min_dist = None
+            replacement = None
+            for seen in self.frequencies.index:
+                act_dist = (
+                    new_frequencies.loc[unseen] - self.frequencies.loc[seen]
+                )
+                if min_dist is None or act_dist < min_dist:
+                    min_dist = act_dist
+                    replacement = seen
+
+            if len(self.used_cols) == 1:
+                unseen = (unseen,)
+                replacement = (replacement,)
+            replace_map[unseen] = replacement
+        return replace_map
+
+    def replace_unseen(self, X):
+        replace_map = self.get_unseen_replace_map(X)
+        for old, new in replace_map.items():
+            to_replace = {col: val for col, val in zip(self.used_cols, old)}
+            value = {col: val for col, val in zip(self.used_cols, new)}
+            X = X.replace(to_replace, value)
+        return X
+
+
+class TargetEncoder(Encoder):
+    def __init__(
+        self, fold=None, random_seed=42, encoder=MeanEncoder, **kwargs
+    ):
+        super().__init__(**kwargs)
         if fold is None:
             fold = KFold(n_splits=5, random_state=random_seed)
 
@@ -84,16 +317,15 @@ class TargetEncoder:
         self.encoder = encoder
         self.train_shape = None
         self.target_name = None
-        self.used_cols = None
 
-    def fit(self, X, y):
-        X = make_dataframe(X)
+    def fit(self, X, y, **kwargs):
+        super().fit(X)
+        X = self.preprocess(X)[self.used_cols]
         splits = []
         predictors = []
         target_name = ", ".join(list(X.columns)) + f" {TARGET_STR}"
         target_name = unique_name(X, target_name)
         self.target_name = target_name
-        self.used_cols = list(X.columns)
         for train, test in self.fold.split(X):
             splits.append((train, test))
             XX, yy = X.iloc[train], y.iloc[train]
@@ -109,9 +341,14 @@ class TargetEncoder:
         return self
 
     def transform(
-        self, X, train_data=False, return_all_cols=True, remove_original=True
+        self,
+        X,
+        train_data=False,
+        return_all_cols=True,
+        remove_original=True,
+        **kwargs,
     ):
-        X = make_dataframe(X)
+        X = self.preprocess(X)
         if not train_data:
             transformed_X = self.main_predictor.transform(X)
 
@@ -130,152 +367,123 @@ class TargetEncoder:
 
         return transformed_X
 
-    def fit_transform(self, X, y):
+    def fit_transform(self, X, y, **kwargs):
         self.fit(X, y)
-        transformed_X = self.transform(
-            X, train_data=True, return_all_cols=False
-        )
+        transformed_X = self.transform(X, train_data=True, return_all_cols=True)
         return transformed_X
 
+    def output_columns(self):
+        return [self.target_name]
+
     def __str__(self):
+        if self.main_predictor is not None:
+            encoder_str = str(self.main_predictor.mean)
+        else:
+            encoder_str = "Unfitted Transformer"
         return (
-            f"Target encoder for feature '{self.used_cols}'"
-            f":\n{self.main_predictor.mean}"
+            f"Target encoder for feature '{self.used_cols}'" f":\n{encoder_str}"
         )
 
 
-class ColumnDropTransformer:
-    def __init__(self, columns_to_drop):
-        self.columns_to_drop = columns_to_drop
-
-    def transform(self, X):
-        return X.drop(self.columns_to_drop, axis=1)
-
-    def __str__(self):
-        return f"Column Drop Transformer: {self.columns_to_drop}"
-
-
-class MissingValueImputer:
-    def __init__(self):
-        self.missing = {}
-        self.col_dropper = None
-
-    def fit(self, X):
-        dropped = []
-        for col in X:
-            min_val = X[col].min()
-            if pd.isna(min_val):
-                min_val = 0
-            imputed_value = min_val - 1
-            x = X[col].fillna(imputed_value)
-            if x.std() == 0:
-                dropped.append(col)
-            else:
-                self.missing[col] = imputed_value
-        self.col_dropper = ColumnDropTransformer(dropped)
-        return X
-
-    def fit_transform(self, X):
-        self.fit(X)
-        return self.transform(X)
-
-    def transform(self, X):
-        X = self.col_dropper.transform(X)
-        for col, value in self.missing.items():
-            X[col] = X[col].fillna(value)
-        return X
-
-    def __str__(self):
-        base = f"Missing Value Imputer:\n\t{str(self.col_dropper)}\n"
-        for col, value in self.missing.items():
-            base += f"\tColumn {col} imputed by '{value}'\n"
-        return base
-
-
-class ReorderColumnsTransformer:
-    def __init__(self, columns):
-        self.columns = columns
-
-    def transform(self, X):
-        return X[self.columns]
-
-    def __str__(self):
-        return f"Column Reorder/Subset transformer: '{self.columns}'"
-
-
-class GenericEncoder:
+class GenericEncoder(Encoder):
     encoder_class = None
-    kwargs = {}
+    defaults = {}
 
-    def __init__(self):
-        self.encoder = self.encoder_class(**self.kwargs)
-        self.used_col = None
+    def __init__(self, used_cols=None, **kwargs):
+        super().__init__(used_cols=used_cols)
+        self.encoder = self.encoder_class(**self.defaults)
+
+    def fit(self, X, *args, **kwargs):
+        super().fit(X)
+        processed = self.preprocess(X)
+        # print("Now", processed)
+        self.encoder.fit(processed)
+        assert (
+            X.shape[0] == processed.shape[0]
+        ), f"Expected to see {X.shape[0]} rows, found {processed.shape[0]}"
+        return self
 
     def preprocess(self, X):
-        return X
-
-    def fit_transform(self, X, *args):
-        self.fit(X)
-        return self.transform(X)
-
-    def fit(self, X, *args):
-        X = make_dataframe(X)
-        processed = self.preprocess(X)
-        self.encoder.fit(processed)
-        assert X.shape[1] == 1, (
-            f"Encoder is expecting single column input, "
-            f"found {X.shape[0]} columns"
-        )
-        self.used_col = X.columns[0]
-
-    def transform(self, X):
-        pass
+        x = super().preprocess(X)
+        return x[self.used_cols]
 
 
 class CustomLabelEncoder(GenericEncoder):
     encoder_class = LabelEncoder
+    # defaults = dict(handle_unknown="ignore")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.target_name = None
 
     def preprocess(self, X):
-        return X.values.reshape(-1)
+        x = super().preprocess(X)
+        return x.values.reshape(-1)
 
-    def transform(self, X):
-        X = make_dataframe(X)
-        new_name = f"{self.used_col} [LE]"
-        x = self.encoder.transform(X[self.used_col])
-        x = pd.Series(x, name=new_name, index=X.index)
-        result = X.join(x).drop(self.used_col, axis=1)
+    def fit(self, X, *args, **kwargs):
+        super().fit(X, *args, **kwargs)
+        self.target_name = f"{self.used_cols} [LE]"
+
+    def transform(self, X, **kwargs):
+        x = self.preprocess(X)
+        x = self.encoder.transform(x)
+
+        x = pd.Series(x, name=self.target_name, index=X.index)
+        result = X.join(x).drop(self.used_cols, axis=1)
         return result
 
     def __str__(self):
+        if hasattr(self.encoder, "categories_"):
+            encoder_str = str(self.encoder.classes_[0])
+        else:
+            encoder_str = "Unfitted Transformer"
+
         return (
-            f"Label Encoder for feature '{self.used_col}':\n\t"
-            f"Categories: {self.encoder.classes_[0]}"
+            f"Label Encoder for feature '{self.used_cols}':\n\t"
+            f"Categories: {encoder_str}"
         )
+
+    def output_columns(self):
+        return [self.target_name]
 
 
 class CustomOneHotEncoder(GenericEncoder):
     encoder_class = OneHotEncoder
-    kwargs = dict(sparse=False, categories="auto")
+    defaults = dict(sparse=False, categories="auto", handle_unknown="ignore")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.target_names = None
 
     def preprocess(self, X):
-        return X.values.reshape(-1, 1)
+        x = super().preprocess(X)
+        return x.values.reshape(-1, 1)
 
-    def transform(self, X):
-        assert len(self.encoder.categories_) == 1, "OHE categories level issue"
-        cols = [
-            f"{self.used_col} [OHE:{val}]"
+    def fit(self, X, *args, **kwargs):
+        super().fit(X, *args, **kwargs)
+        self.target_names = [
+            f"{self.used_cols} [OHE:{val}]"
             for val in self.encoder.categories_[0]
         ]
-        X = make_dataframe(X)
-        x = X[self.used_col]
-        x = self.preprocess(x)
+
+    def transform(self, X, **kwargs):
+        assert len(self.encoder.categories_) == 1, "OHE categories level issue"
+        x = self.preprocess(X)
         x = self.encoder.transform(x)
-        x = pd.DataFrame(x, columns=cols, index=X.index)
-        result = X.join(x).drop(self.used_col, axis=1)
+        x = pd.DataFrame(x, columns=self.target_names, index=X.index)
+        result = X.join(x).drop(self.used_cols, axis=1)
         return result
 
+    def output_columns(self):
+        return self.target_names
+
     def __str__(self):
+        if hasattr(self.encoder, "categories_"):
+            encoder_str = str(self.encoder.categories_[0])
+        else:
+            encoder_str = "Unfitted Transformer"
+
         return (
-            f"One Hot Encoder for feature '{self.used_col}':\n\t"
-            f"Categories: {self.encoder.categories_[0]}"
+            f"One Hot Encoder for feature '{self.used_cols}':\n\t"
+            f"Categories: {encoder_str}"
         )

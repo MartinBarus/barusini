@@ -110,3 +110,6 @@ venv.bak/
 # pickled models
 *.pickle
 *.pkl
+
+# profiler
+*.prof
