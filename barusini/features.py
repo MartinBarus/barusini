@@ -14,7 +14,6 @@ from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 from joblib import Parallel, delayed
-from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
 from barusini.transformers.transformer import Pipeline
@@ -29,14 +28,12 @@ from barusini.utils import (
     get_terminal_size,
     save_object,
     load_object,
-    duration,
+    format_time,
 )
 
 ESTIMATOR = XGBClassifier(seed=42)
-# ESTIMATOR = LGBMClassifier(random_state=42)
-# ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1,
-# random_state=42)
-CV = StratifiedKFold(n_splits=3, random_state=42)
+# ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
 SCORER = roc_auc_score
 MAXIMIZE = True
 STAGE_NAME = "STAGE"
@@ -345,13 +342,25 @@ def feature_engineering(X, y, model_path, **kwargs):
     return model
 
 
-def model_search(X, y, model, model_path):
-    return model
+def model_search(X_train, y_train, model, X_test, model_path):
+    best = optimize_xboost(
+        model, X_train, y_train, X_test, CV, SCORER, MAXIMIZE
+    )
+    new_model = copy.deepcopy(model)
+    print("BEST PARAMS", best.params)
+    new_model.model = XGBClassifier(**best.params)
+    print(new_model)
+    new_model.fit(X_train, y_train)
+    if model_path:
+        print("Saving model to", model_path)
+        save_object(model, model_path)
+    return new_model
 
 
 def auto_ml(X, y, model_path=None, **kwargs):
     model = feature_engineering(X, y, model_path=model_path)
-    model = model_search(X, y, model, model_path)
+    model = model_search(X, y, model, model_path, None, model_path)
+    return model
 
 
 def predict(X, model, included_columns, output_path, probability):
@@ -456,3 +465,6 @@ if __name__ == "__main__":
             y = X[target]
         model = load_object(model_file)
         model = model_search(X, y, model, None, model_file)
+
+    duration = format_time(time.time() - start)
+    print(f"Duration: {duration}")
