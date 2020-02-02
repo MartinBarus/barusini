@@ -29,9 +29,16 @@ class Pipeline(Transformer):
         self.target = None
 
     def fit(self, X, y, **kwargs):
-        X_transformed = self.fit_transform(X, y, **kwargs)
+        X_transformed = self.fit_transform(X, y)
         X_transformed = X_transformed[self.used_cols]
-        self.model.fit(X_transformed, y)
+        if "eval_set" in kwargs:
+            eval_set = kwargs["eval_set"]
+            eval_set = [
+                (self.transform(x)[self.used_cols], y) for x, y in eval_set
+            ]
+            kwargs["eval_set"] = eval_set
+
+        self.model.fit(X_transformed, y, **kwargs)
         self.target = y.name
         return self
 
