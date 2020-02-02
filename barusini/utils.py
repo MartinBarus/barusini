@@ -8,6 +8,8 @@
 ####################################################################
 import os
 import pickle
+import pandas as pd
+import numpy as np
 
 
 def get_terminal_size():
@@ -48,3 +50,26 @@ def format_time(elapsed_time):
             break
 
     return f"{elapsed_time} {unit}"
+
+
+def sanitize(x):
+    return (
+        x.replace("[", "_").replace("]", "_").replace(":", "_").replace("'", "")
+    )
+
+
+def unique_value(x, name):
+    while name in x:
+        name += str(np.random.randint(10))
+    return name
+
+
+def unique_name(X, name):
+    return unique_value(X.columns, sanitize(name))
+
+
+def make_dataframe(X):
+    if type(X) is pd.Series:
+        X = pd.DataFrame({X.name: X})
+    return X
+

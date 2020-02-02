@@ -1,201 +1,11 @@
-###################################################################
-# Copyright (C) Martin Barus <martin.barus@gmail.com>
-#
-# This file is part of barusini.
-#
-# barusini can not be copied and/or distributed without the express
-# permission of Martin Barus or Miroslav Barus
-####################################################################
-
-
-from category_encoders import BinaryEncoder
-import copy
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-import numpy as np
+from barusini.transformers.transformer import Transformer
+from barusini.utils import unique_name, sanitize, make_dataframe, unique_value
 import pandas as pd
 
 TARGET_STR = "[TE]"  # default target name
 INDEX_STR = "index"  # default temporary index name
-
-
-def unique_value(x, name):
-    while name in x:
-        name += str(np.random.randint(10))
-    return name
-
-
-def unique_name(X, name):
-    return unique_value(X.columns, name)
-
-
-def make_dataframe(X):
-    if type(X) is pd.Series:
-        X = pd.DataFrame({X.name: X})
-    return X
-
-
-class Transformer:
-    def __init__(self, used_cols=None):
-        self.used_cols = used_cols
-
-    def fit(self, X, *args, **kwargs):
-        raise ValueError("Fit method is not implemented")
-
-    def transform(self, X, **kwargs):
-        raise ValueError("Transform method is not implemented")
-
-    def fit_transform(self, X, *args, **kwargs):
-        self.fit(X, *args, **kwargs)
-        return self.transform(X, **kwargs)
-
-    def output_columns(self):
-        if self.used_cols is not None:
-            return self.used_cols
-        return []
-
-
-class Pipeline(Transformer):
-    def __init__(self, transformers, model):
-        super().__init__()
-        self.transformers = transformers
-        self.model = model
-        self.target = None
-
-    def fit(self, X, y, **kwargs):
-        X_transformed = self.fit_transform(X, y, **kwargs)
-        X_transformed = X_transformed[self.used_cols]
-        self.model.fit(X_transformed, y)
-        self.target = y.name
-        return self
-
-    def transform(self, X, **kwargs):
-        for transformer in self.transformers:
-            X = transformer.transform(X, **kwargs)
-        return X
-
-    def fit_transform(self, X, y, **kwargs):
-        self.used_cols = []
-        for transformer in self.transformers:
-            X = transformer.fit_transform(X, y, **kwargs)
-            self.used_cols.extend(transformer.output_columns())
-
-        # self.used_cols = list(X.columns)
-        self.used_cols = sorted(list(set(self.used_cols)))
-        # self.used_cols = [col for col in self.used_cols if col in X]
-        return X
-
-    def predict(self, X):
-        X_transformed = self.transform(X)
-        return self.model.predict(X_transformed[self.used_cols])
-
-    def predict_proba(self, X):
-        X_transformed = self.transform(X)
-        return self.model.predict_proba(X_transformed[self.used_cols])
-
-    def add_transformators(self, transformers):
-        orig_transformers = [copy.deepcopy(x) for x in self.transformers]
-        transformers = orig_transformers + transformers
-        return Pipeline(transformers, copy.deepcopy(self.model))
-
-    @staticmethod
-    def _match_name(transformer, columns, partial_match):
-        match = all([c in transformer.used_cols for c in columns])
-        if partial_match:
-            return match
-        return match and len(columns) == len(transformer.used_cols)
-
-    def remove_transformers(self, columns, partial_match=False):
-        # removed_trasformers = [
-        #     x
-        #     for x in self.transformers
-        #     if self._match_name(x, columns, partial_match)
-        # ]
-        #
-        # print("Removed following transformers:")
-        # for transformer in removed_trasformers:
-        #     print(transformer)
-
-        self.transformers = [
-            x
-            for x in self.transformers
-            if not self._match_name(x, columns, partial_match)
-        ]
-
-    def __str__(self):
-        str_representation = ""
-        for transformer in self.transformers:
-            str_representation += f"{str(transformer)}\n"
-
-        str_representation += f"{str(self.model)}"
-        return str_representation
-
-
-class ColumnDropTransformer(Transformer):
-    def __init__(self, columns_to_drop):
-        super().__init__()
-        self.columns_to_drop = columns_to_drop
-
-    def transform(self, X, **kwargs):
-        return X.drop(self.columns_to_drop, axis=1)
-
-    def fit(self, X, *args, **kwargs):
-        pass
-        # self.used_cols = [col for col in X if col not in self.columns_to_drop]
-
-    def __str__(self):
-        return f"Column Drop Transformer: {self.columns_to_drop}"
-
-
-class MissingValueImputer(Transformer):
-    def __init__(self, column):
-        self.missing = {}
-        # self.col_dropper = None
-        self.used_cols = [column]
-
-    def fit(self, X, *args, **kwargs):
-        # dropped = []
-        for col in self.used_cols:
-            min_val = X[col].min()
-            if pd.isna(min_val):
-                min_val = 0
-            imputed_value = min_val - 1
-
-            self.missing[col] = imputed_value
-        # self.col_dropper = ColumnDropTransformer(dropped)
-        return self
-
-    def transform(self, X, **kwargs):
-        # X = self.col_dropper.transform(X)
-        X = X.copy()
-        for col, value in self.missing.items():
-            if col in X:
-                x = X[col].fillna(value)
-                X[col] = x
-            else:
-                print(f"Warning!: Column {col} expected but nor found {self}")
-        return X
-
-    def __str__(self):
-        base = f"Missing Value Imputer: ["
-        for col, value in self.missing.items():
-            base += f"'{col}' imputed by '{value}'"
-        return base + "]"
-
-
-class ReorderColumnsTransformer(Transformer):
-    def __init__(self, columns):
-        self.columns = columns
-
-    def transform(self, X, **kwargs):
-        return X[self.columns]
-
-    def fit(self, *args, **kwargs):
-        # Nothing to do
-        pass
-
-    def __str__(self):
-        return f"Column Reorder/Subset transformer: '{self.columns}'"
 
 
 class MeanEncoder(Transformer):
@@ -203,7 +13,7 @@ class MeanEncoder(Transformer):
         self.mean = None
         self.columns = None
         self.target_name = None
-        self.missing_value = None
+        self.global_mean = None
         self.target_name = None
 
     def fit(self, X, y, target_name=None, **kwargs):
@@ -214,7 +24,7 @@ class MeanEncoder(Transformer):
         self.columns = list(X.columns)
         self.mean = x.groupby(self.columns).mean()
         self.target_name = target_name
-        self.missing_value = x[target_name].min() - 1
+        self.global_mean = y.values.mean()
         return self
 
     def transform(self, X, **kwargs):
@@ -229,7 +39,18 @@ class MeanEncoder(Transformer):
             .set_index(index_name)
         )
         X.index.name = orig_index_name
-        X[self.target_name] = X[self.target_name].fillna(self.missing_value)
+        unseen_rows = pd.isna(X[self.target_name])
+        if any(unseen_rows):
+            unseen = X.loc[unseen_rows, self.columns]
+            unseen = unseen.apply(
+                lambda x: "_".join([str(c) for c in x]), axis=1
+            ).value_counts()
+            print(
+                f"WARNING!: {unseen.shape[0]} unseen values for {self.columns}"
+                f", value counts:\n{unseen}"
+            )
+
+        X[self.target_name] = X[self.target_name].fillna(self.global_mean)
         return X.sort_index()
 
     def __str__(self):
@@ -273,7 +94,10 @@ class Encoder(Transformer):
         ]
         n_unseen = len(unseen_values)
         if n_unseen:
-            print(f"WARNING!: {n_unseen} unseen values for {self.used_cols}")
+            print(
+                f"WARNING!: {n_unseen} unseen values for {self.used_cols}: "
+                f"{unseen_values}"
+            )
 
         replace_map = {}
         for unseen in unseen_values:
@@ -340,6 +164,9 @@ class TargetEncoder(Encoder):
         self.train_shape = X.shape
         return self
 
+    def replace_unseen(self, X):
+        return X
+
     def transform(
         self,
         X,
@@ -358,6 +185,10 @@ class TargetEncoder(Encoder):
             for (train, test), predictor in zip(self.splits, self.predictors):
                 partial_transformed_X = predictor.transform(X.iloc[test])
                 transformed_X.iloc[test] = partial_transformed_X
+
+        transformed_X[self.target_name] = transformed_X[
+            self.target_name
+        ].astype(float)
 
         if not return_all_cols:
             return transformed_X[[self.target_name]]
@@ -422,7 +253,7 @@ class CustomLabelEncoder(GenericEncoder):
 
     def fit(self, X, *args, **kwargs):
         super().fit(X, *args, **kwargs)
-        self.target_name = f"{self.used_cols} [LE]"
+        self.target_name = sanitize(f"{self.used_cols} [LE]")
 
     def transform(self, X, **kwargs):
         x = self.preprocess(X)
@@ -462,7 +293,7 @@ class CustomOneHotEncoder(GenericEncoder):
     def fit(self, X, *args, **kwargs):
         super().fit(X, *args, **kwargs)
         self.target_names = [
-            f"{self.used_cols} [OHE:{val}]"
+            sanitize(f"{self.used_cols} [OHE:{val}]")
             for val in self.encoder.categories_[0]
         ]
 

@@ -6,7 +6,6 @@
 # barusini can not be copied and/or distributed without the express
 # permission of Martin Barus or Miroslav Barus
 ####################################################################
-
 import copy
 import numpy as np
 import pandas as pd
@@ -16,12 +15,14 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 from joblib import Parallel, delayed
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 
-from barusini.transformers import (
+from barusini.transformers.transformer import Pipeline
+from barusini.transformers.basic_transformers import MissingValueImputer
+from barusini.transformers.encoders import (
     CustomOneHotEncoder,
     CustomLabelEncoder,
-    MissingValueImputer,
-    Pipeline,
     TargetEncoder,
 )
 from barusini.utils import (
@@ -31,14 +32,15 @@ from barusini.utils import (
     save_object,
 )
 
-
-ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+ESTIMATOR = XGBClassifier(seed=42)
+# ESTIMATOR = LGBMClassifier(random_state=42)
+# ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1,
+# random_state=42)
 CV = StratifiedKFold(n_splits=3, random_state=42)
 SCORER = roc_auc_score
 MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
-ALLOWED_CAT_ENCODERS = [CustomOneHotEncoder, CustomLabelEncoder, TargetEncoder]
 MAX_RELATIVE_CARDINALITY = 0.9
 
 
@@ -218,9 +220,8 @@ def find_best_subset(X, y, model, **kwargs):
     )
 
 
-def get_encoding_generator(feature, drop=False):
+def get_encoding_generator(feature, encoders, drop=False):
     def categorical_encoding_generator(model):
-        encoders = ALLOWED_CAT_ENCODERS
         for enc_class in trange(encoders):
             enc = enc_class(used_cols=[feature])
             new_model = copy.deepcopy(model)
@@ -232,22 +233,39 @@ def get_encoding_generator(feature, drop=False):
     return categorical_encoding_generator
 
 
+def get_valid_encoders(column):
+    n_unique = column.nunique()
+    if (n_unique / column.size) > MAX_RELATIVE_CARDINALITY:
+        return []
+
+    if n_unique < 3:
+        if column.apply(type).eq(str).any():
+            return [CustomLabelEncoder]
+        return []
+
+    encoders = [TargetEncoder]
+    if n_unique < 10:
+        encoders.extend([CustomOneHotEncoder, CustomLabelEncoder])
+    return encoders
+
+
 def encode_categoricals(X, y, model, **kwargs):
     X_ = model.transform(X)
     categoricals = X_.select_dtypes(object).columns
     del X_
     print("Encoding stage for ", categoricals)
     for feature in trange(categoricals):
-        if X[feature].nunique() / X.shape[0] > MAX_RELATIVE_CARDINALITY:
-            continue  # Skip
-        model = generic_change(
-            X,
-            y,
-            model,
-            stage_name="Encoding categoricals {}".format(feature),
-            generator=get_encoding_generator(feature),
-            **kwargs,
-        )
+        encoders = get_valid_encoders(X[feature])
+        print(f"Encoders for {feature}:", [x.__name__ for x in encoders])
+        if encoders:
+            model = generic_change(
+                X,
+                y,
+                model,
+                stage_name="Encoding categoricals {}".format(feature),
+                generator=get_encoding_generator(feature, encoders),
+                **kwargs,
+            )
     return model
 
 
@@ -257,23 +275,26 @@ def recode_categoricals(X, y, model, max_unique=50, **kwargs):
     transformed_X = subset_numeric_features(transformed_X)
     used = [c for c in transformed_X if c in model.used_cols]
     transformed_X = transformed_X[used]
-    nunique = transformed_X.nunique()
+    original_used = list(set(X.columns).intersection(set(used)))
+    nunique = transformed_X[original_used].nunique()
     categoricals = [f for f in nunique.index if nunique[f] <= max_unique]
-    categoricals = [c for c in categoricals if "[" not in c]
     print("Trying to recode following categorical values:", categoricals)
     for feature in trange(categoricals):
-        model = generic_change(
-            X,
-            y,
-            model,
-            stage_name="Recoding {}".format(feature),
-            generator=get_encoding_generator(feature, drop=True),
-            **kwargs,
-        )
+        encoders = get_valid_encoders(X[feature])
+        print(f"Encoders for {feature}:", [x.__name__ for x in encoders])
+        if encoders:
+            model = generic_change(
+                X,
+                y,
+                model,
+                stage_name="Recoding {}".format(feature),
+                generator=get_encoding_generator(feature, encoders, drop=True),
+                **kwargs,
+            )
     return model
 
 
-def auto_ml(X, y, model_path=None, **kwargs):
+def feature_engineering(X, y, model_path, **kwargs):
     model = basic_preprocess(X.copy())
     model = find_best_subset(X, y, model, **kwargs)
     model = encode_categoricals(X, y, model, **kwargs)
@@ -286,6 +307,15 @@ def auto_ml(X, y, model_path=None, **kwargs):
     print("Final features:", cols)
 
     return model
+
+
+def model_search(X, y, model, model_path):
+    return model
+
+
+def auto_ml(X, y, model_path=None, **kwargs):
+    model = feature_engineering(X, y, model_path=model_path)
+    model = model_search(X, y, model, model_path)
 
 
 def predict(X, model, included_columns, output_path, probability):
