@@ -14,16 +14,15 @@ from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 from joblib import Parallel, delayed
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 
 from barusini.transformers.transformer import Pipeline
 from barusini.transformers.basic_transformers import MissingValueImputer
-from barusini.transformers import (
-    CustomLabelEncoder,
+from barusini.transformers.encoders import (
     CustomOneHotEncoder,
-    LinearTextEncoder,
-    MeanTargetEncoder,
-    TfIdfEncoder,
-    TfIdfPCAEncoder,
+    CustomLabelEncoder,
+    TargetEncoder,
 )
 from barusini.model_tuning import optimize_xboost
 from barusini.utils import (
@@ -33,21 +32,13 @@ from barusini.utils import (
     duration,
 )
 
-ALLOWED_TRANSFORMERS = [
-    CustomLabelEncoder,
-    CustomLabelEncoder,
-    MeanTargetEncoder,
-    TfIdfPCAEncoder,
-    TfIdfEncoder,
-    LinearTextEncoder,
-]
-
-ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
-CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
-CLASSIFICATION = True
-SCORER = log_loss
-PROBA = True
-MAXIMIZE = False
+ESTIMATOR = XGBClassifier(seed=42)
+# ESTIMATOR = LGBMClassifier(random_state=42)
+# ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1,
+# random_state=42)
+CV = StratifiedKFold(n_splits=3, random_state=42)
+SCORER = roc_auc_score
+MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 MAX_RELATIVE_CARDINALITY = 0.9
@@ -268,7 +259,8 @@ def find_best_subset(X, y, model, **kwargs):
 
 def get_encoding_generator(feature, encoders, drop=False):
     def categorical_encoding_generator(model):
-        for encoder in trange(encoders):
+        for enc_class in trange(encoders):
+            enc = enc_class(used_cols=[feature])
             new_model = copy.deepcopy(model)
             if drop:
                 new_model.remove_transformers([feature], partial_match=False)
@@ -278,63 +270,30 @@ def get_encoding_generator(feature, encoders, drop=False):
     return categorical_encoding_generator
 
 
-def subset_allowed_encoders(encoders, allowed_encoders):
-    return [x for x in encoders if x.__class__ in allowed_encoders]
-
-
-def get_valid_encoders(column, y, classification, allowed_encoders):
+def get_valid_encoders(column):
     n_unique = column.nunique()
-    too_many = ((n_unique / column.size) > MAX_RELATIVE_CARDINALITY) or (
-        n_unique > MAX_ABSOLUTE_CARDINALITY
-    )
-    multiclass = classification and len(set(y)) > 2
-    if too_many:
-        if str(column.dtypes) == "object":
-            encoders = [
-                LinearTextEncoder(
-                    used_cols=[column.name], multi_class=multiclass
-                ),
-                TfIdfPCAEncoder(used_cols=[column.name], n_components=20),
-                TfIdfEncoder(used_cols=[column.name], vocab_size=20),
-            ]
-            return subset_allowed_encoders(encoders, allowed_encoders)
-        else:
-            return []
+    if (n_unique / column.size) > MAX_RELATIVE_CARDINALITY:
+        return []
 
     if n_unique < 3:
         if column.apply(type).eq(str).any():
-            encoders = [CustomLabelEncoder(used_cols=[column.name])]
-            return subset_allowed_encoders(encoders, allowed_encoders)
+            return [CustomLabelEncoder]
         return []
 
-    encoders = [
-        MeanTargetEncoder(used_cols=[column.name], multi_class=multiclass)
-    ]
+    encoders = [TargetEncoder]
     if n_unique < 10:
-        encoders.extend(
-            [
-                CustomOneHotEncoder(used_cols=[column.name]),
-                CustomLabelEncoder(used_cols=[column.name]),
-            ]
-        )
-    return subset_allowed_encoders(encoders, allowed_encoders)
+        encoders.extend([CustomOneHotEncoder, CustomLabelEncoder])
+    return encoders
 
 
-@duration("Encode categoricals")
-def encode_categoricals(
-    X, y, model, classification, allowed_encoders, **kwargs
-):
+def encode_categoricals(X, y, model, **kwargs):
     X_ = model.transform(X)
     categoricals = X_.select_dtypes(object).columns
     del X_
     print("Encoding stage for ", categoricals)
     for feature in trange(categoricals):
-        encoders = get_valid_encoders(
-            X[feature], y, classification, allowed_encoders
-        )
-        print(
-            f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders]
-        )
+        encoders = get_valid_encoders(X[feature])
+        print(f"Encoders for {feature}:", [x.__name__ for x in encoders])
         if encoders:
             model = generic_change(
                 X,
@@ -360,12 +319,8 @@ def recode_categoricals(
     categoricals = [f for f in nunique.index if nunique[f] <= max_unique]
     print("Trying to recode following categorical values:", categoricals)
     for feature in trange(categoricals):
-        encoders = get_valid_encoders(
-            X[feature], y, classification, allowed_encoders
-        )
-        print(
-            f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders]
-        )
+        encoders = get_valid_encoders(X[feature])
+        print(f"Encoders for {feature}:", [x.__name__ for x in encoders])
         if encoders:
             model = generic_change(
                 X,
@@ -378,58 +333,11 @@ def recode_categoricals(
     return model
 
 
-@duration("Feature engineering")
-def feature_engineering(
-    X,
-    y,
-    model_path,
-    classification=True,
-    subset_stage=True,
-    encode_stage=True,
-    recode_stage=True,
-    allowed_transformers=ALLOWED_TRANSFORMERS,
-    **kwargs,
-):
-    model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
-    if subset_stage:
-        model = find_best_subset(X, y, model, **kwargs)
-
-    if encode_stage:
-        model = encode_categoricals(
-            X,
-            y,
-            model,
-            classification=classification,
-            allowed_encoders=allowed_transformers,
-            **kwargs,
-        )
-    if recode_stage:
-        model = recode_categoricals(
-            X,
-            y,
-            model,
-            classification=classification,
-            allowed_encoders=allowed_transformers,
-            **kwargs,
-        )
-    if model_path:
-        save_object(model, model_path)
-
-    cols = sorted(list(model.transform(X).columns))
-    print("Final features:", cols)
-
-    return model
-
-
-def model_search(X_train, y_train, model, X_test, model_path):
-    best = optimize_xboost(
-        model, X_train, y_train, X_test, CV, SCORER, MAXIMIZE, PROBA
-    )
-    new_model = copy.deepcopy(model)
-    print("BEST PARAMS", best.params)
-    new_model.model = XGBClassifier(**best.params)
-    print(new_model)
-    new_model.fit(X_train, y_train)
+def feature_engineering(X, y, model_path, **kwargs):
+    model = basic_preprocess(X.copy())
+    model = find_best_subset(X, y, model, **kwargs)
+    model = encode_categoricals(X, y, model, **kwargs)
+    model = recode_categoricals(X, y, model, **kwargs)
     if model_path:
         print("Saving model to", model_path)
         save_object(model, model_path)
@@ -440,6 +348,15 @@ def auto_ml(X, y, model_path=None, **kwargs):
     model = feature_engineering(X, y, model_path=model_path)
     model = model_search(X, y, model, model_path, None, model_path)
     return model
+
+
+def model_search(X, y, model, model_path):
+    return model
+
+
+def auto_ml(X, y, model_path=None, **kwargs):
+    model = feature_engineering(X, y, model_path=model_path)
+    model = model_search(X, y, model, model_path)
 
 
 def predict(X, model, included_columns, output_path, probability):

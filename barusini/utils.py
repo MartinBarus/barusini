@@ -10,7 +10,6 @@ import os
 import pickle
 import pandas as pd
 import numpy as np
-import time
 
 
 def get_terminal_size():
@@ -66,46 +65,11 @@ def unique_value(x, name):
 
 
 def unique_name(X, name):
-    if len(X.shape) == 2:
-        columns = X.columns
-    else:
-        columns = X.name
-    return unique_value(columns, sanitize(name))
+    return unique_value(X.columns, sanitize(name))
 
 
 def make_dataframe(X):
     if type(X) is pd.Series:
-        X = pd.DataFrame({X.name: X.copy()})
-    else:
-        X = X.copy()
+        X = pd.DataFrame({X.name: X})
     return X
 
-
-def subset(X, columns):
-    if len(X.shape) == 2:
-        return X[columns]
-    assert len(columns) == 1
-    return X
-
-
-def reshape(X, shape_len):
-    if shape_len == 2:
-        return make_dataframe(X)
-    if len(X.shape) == 2:
-        assert X.shape[1] == 1
-        return X[X.columns[0]]
-    return X
-
-
-def duration(label):
-    def duration_decorator(func):
-        def measure_duration(*args, **kw):
-            start = time.time()
-            res = func(*args, **kw)
-            time_elapsed = format_time(time.time() - start)
-            print(f"Duration of stage {label}: {time_elapsed}")
-            return res
-
-        return measure_duration
-
-    return duration_decorator
