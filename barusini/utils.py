@@ -10,6 +10,7 @@ import os
 import pickle
 import pandas as pd
 import numpy as np
+import time
 
 
 def get_terminal_size():
@@ -73,3 +74,16 @@ def make_dataframe(X):
         X = pd.DataFrame({X.name: X})
     return X
 
+
+def duration(label):
+    def duration_decorator(func):
+        def measure_duration(*args, **kw):
+            start = time.time()
+            res = func(*args, **kw)
+            time_elapsed = format_time(time.time() - start)
+            print(f"Duration of stage {label}: {time_elapsed}")
+            return res
+
+        return measure_duration
+
+    return duration_decorator
