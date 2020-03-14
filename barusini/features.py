@@ -29,6 +29,7 @@ from barusini.utils import (
     save_object,
     load_object,
     format_time,
+    duration,
 )
 
 ESTIMATOR = XGBClassifier(seed=42)
@@ -79,6 +80,7 @@ def subset_numeric_features(X):
     return X
 
 
+@duration("Basic Preprocessing")
 def basic_preprocess(X, y, estimator=ESTIMATOR):
     X = subset_numeric_features(X)
     dropped = drop_uniques(X)
@@ -285,6 +287,7 @@ def get_valid_encoders(column):
     return encoders
 
 
+@duration("Encode categoricals")
 def encode_categoricals(X, y, model, **kwargs):
     X_ = model.transform(X)
     categoricals = X_.select_dtypes(object).columns
@@ -306,9 +309,7 @@ def encode_categoricals(X, y, model, **kwargs):
 
 
 @duration("Recode categoricals")
-def recode_categoricals(
-    X, y, model, classification, allowed_encoders, max_unique=50, **kwargs
-):
+def recode_categoricals(X, y, model, max_unique=50, **kwargs):
     transformed_X = model.transform(X)
     transformed_X = subset_numeric_features(transformed_X)
     used = [c for c in transformed_X if c in model.used_cols]
@@ -332,6 +333,7 @@ def recode_categoricals(
     return model
 
 
+@duration("Feature engineering")
 def feature_engineering(X, y, model_path, **kwargs):
     model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
     model = find_best_subset(X, y, model, **kwargs)
@@ -467,6 +469,3 @@ if __name__ == "__main__":
             y = X[target]
         model = load_object(model_file)
         model = model_search(X, y, model, None, model_file)
-
-    duration = format_time(time.time() - start)
-    print(f"Duration: {duration}")
