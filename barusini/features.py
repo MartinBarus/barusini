@@ -10,7 +10,7 @@ import copy
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import log_loss
+from sklearn.metrics import roc_auc_score, accuracy_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 from joblib import Parallel, delayed
@@ -34,7 +34,7 @@ from barusini.utils import (
 ESTIMATOR = XGBClassifier(seed=42)
 # ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
 CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
-SCORER = roc_auc_score
+SCORER, PROBA = roc_auc_score, True
 MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
@@ -112,9 +112,7 @@ def validation(model, X, y, train, test, scoring, proba=PROBA):
     tst_X = X.loc[test]
     tst_y = y.loc[test]
     if proba:
-        predictions = model.predict_proba(tst_X)
-        if predictions.shape[1] == 2:
-            predictions = predictions[:, -1]
+        predictions = model.predict_proba(tst_X)[:, -1]
     else:
         predictions = model.predict(tst_X)
     score = scoring(tst_y, predictions)
@@ -344,7 +342,7 @@ def feature_engineering(X, y, model_path, **kwargs):
 
 def model_search(X_train, y_train, model, X_test, model_path):
     best = optimize_xboost(
-        model, X_train, y_train, X_test, CV, SCORER, MAXIMIZE
+        model, X_train, y_train, X_test, CV, SCORER, MAXIMIZE, PROBA
     )
     new_model = copy.deepcopy(model)
     print("BEST PARAMS", best.params)
