@@ -40,6 +40,7 @@ MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 MAX_RELATIVE_CARDINALITY = 0.9
+MAX_ABSOLUTE_CARDINALITY = 1000
 
 
 def format_str(x, total_len=TERMINAL_COLS):
@@ -79,7 +80,7 @@ def subset_numeric_features(X):
     return X
 
 
-def basic_preprocess(X):
+def basic_preprocess(X, y, estimator=ESTIMATOR):
     X = subset_numeric_features(X)
     dropped = drop_uniques(X)
     transformers = []
@@ -87,7 +88,7 @@ def basic_preprocess(X):
         if column not in dropped:
             transformers.append(MissingValueImputer(column))
 
-    pipeline = Pipeline(transformers, ESTIMATOR)
+    pipeline = Pipeline(transformers, estimator)
     pipeline.fit(X, y)
     return pipeline
 
@@ -112,17 +113,21 @@ def validation(model, X, y, train, test, scoring, proba=PROBA):
     tst_X = X.loc[test]
     tst_y = y.loc[test]
     if proba:
-        predictions = model.predict_proba(tst_X)[:, -1]
+        predictions = model.predict_proba(tst_X)
+        if predictions.shape[1] == 2:
+            predictions = predictions[:, -1]
     else:
         predictions = model.predict(tst_X)
     score = scoring(tst_y, predictions)
     return score
 
 
-def cross_val_score(model, X, y, cv, scoring, n_jobs):
+def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=PROBA):
     parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
     scores = parallel(
-        delayed(validation)(copy.deepcopy(model), X, y, train, test, scoring)
+        delayed(validation)(
+            copy.deepcopy(model), X, y, train, test, scoring, proba
+        )
         for train, test in cv.split(X, y)
     )
 
@@ -137,13 +142,16 @@ def best_alternative_model(
     metric,
     cv_n_jobs,
     alternative_n_jobs,
+    proba,
+    X,
+    y,
 ):
     parallel = Parallel(
         n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
     )
     result = parallel(
         delayed(cross_val_score)(
-            pipeline, X, y, cv=cv, scoring=metric, n_jobs=cv_n_jobs
+            pipeline, X, y, cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba
         )
         for pipeline in alternative_pipelines
     )
@@ -169,10 +177,12 @@ def generic_change(
     recursive=False,
     cv_n_jobs=-1,
     alternative_n_jobs=1,
+    proba=PROBA,
+    **kwargs,
 ):
     print(format_str("Starting stage {}".format(stage_name)))
     base_score, _ = cross_val_score(
-        model_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric
+        model_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric, proba=proba,
     )
     print("BASE", base_score)
     original_best = base_score
@@ -186,6 +196,9 @@ def generic_change(
             metric,
             cv_n_jobs,
             alternative_n_jobs,
+            proba,
+            X,
+            y,
         )
         if best_pipeline is not None:
             model_pipeline = best_pipeline
@@ -237,6 +250,8 @@ def get_encoding_generator(feature, encoders, drop=False):
 def get_valid_encoders(column):
     n_unique = column.nunique()
     if (n_unique / column.size) > MAX_RELATIVE_CARDINALITY:
+        return []
+    if n_unique > MAX_ABSOLUTE_CARDINALITY:
         return []
 
     if n_unique < 3:
@@ -296,7 +311,7 @@ def recode_categoricals(X, y, model, max_unique=50, **kwargs):
 
 
 def feature_engineering(X, y, model_path, **kwargs):
-    model = basic_preprocess(X.copy())
+    model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
     model = find_best_subset(X, y, model, **kwargs)
     model = encode_categoricals(X, y, model, **kwargs)
     model = recode_categoricals(X, y, model, **kwargs)
