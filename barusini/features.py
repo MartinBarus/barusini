@@ -30,6 +30,7 @@ from barusini.utils import (
     save_object,
     load_object,
     format_time,
+    duration,
 )
 
 ESTIMATOR = XGBClassifier(seed=42)
@@ -80,6 +81,7 @@ def subset_numeric_features(X):
     return X
 
 
+@duration("Basic Preprocessing")
 def basic_preprocess(X, y, estimator=ESTIMATOR):
     X = subset_numeric_features(X)
     dropped = drop_uniques(X)
@@ -220,6 +222,7 @@ def generic_change(
     return model_pipeline
 
 
+@duration("Find Best Subset")
 def find_best_subset(X, y, model, **kwargs):
     return generic_change(
         X,
@@ -265,6 +268,7 @@ def get_valid_encoders(column):
     return encoders
 
 
+@duration("Encode categoricals")
 def encode_categoricals(X, y, model, **kwargs):
     X_ = model.transform(X)
     categoricals = X_.select_dtypes(object).columns
@@ -285,8 +289,8 @@ def encode_categoricals(X, y, model, **kwargs):
     return model
 
 
+@duration("Recode categoricals")
 def recode_categoricals(X, y, model, max_unique=50, **kwargs):
-
     transformed_X = model.transform(X)
     transformed_X = subset_numeric_features(transformed_X)
     used = [c for c in transformed_X if c in model.used_cols]
@@ -310,6 +314,7 @@ def recode_categoricals(X, y, model, max_unique=50, **kwargs):
     return model
 
 
+@duration("Feature engineering")
 def feature_engineering(X, y, model_path, **kwargs):
     model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
     model = find_best_subset(X, y, model, **kwargs)
@@ -374,7 +379,6 @@ def predict(X, model, included_columns, output_path, probability):
 if __name__ == "__main__":
     import argparse
 
-    start = time.time()
     parser = argparse.ArgumentParser(description="CLI AutoML Tool")
     parser.add_argument("input", type=str, help="input csv path")
     parser.add_argument("--target", type=str, help="target name str")
@@ -449,6 +453,3 @@ if __name__ == "__main__":
             y = X[target]
         model = load_object(model_file)
         model = model_search(X, y, model, None, model_file)
-
-    duration = format_time(time.time() - start)
-    print(f"Duration: {duration}")
