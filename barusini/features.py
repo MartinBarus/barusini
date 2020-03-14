@@ -39,7 +39,7 @@ MAXIMIZE = True
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 MAX_RELATIVE_CARDINALITY = 0.9
-MAX_ABSOLUTE_CARDINALITY = 10000
+MAX_ABSOLUTE_CARDINALITY = 1000
 
 
 def format_str(x, total_len=TERMINAL_COLS):
@@ -79,7 +79,6 @@ def subset_numeric_features(X):
     return X
 
 
-@duration("Basic Preprocessing")
 def basic_preprocess(X, y, estimator=ESTIMATOR):
     X = subset_numeric_features(X)
     dropped = drop_uniques(X)
@@ -112,14 +111,16 @@ def validation(model, X, y, train, test, scoring, proba=PROBA):
     tst_X = X.loc[test]
     tst_y = y.loc[test]
     if proba:
-        predictions = model.predict_proba(tst_X)[:, -1]
+        predictions = model.predict_proba(tst_X)
+        if predictions.shape[1] == 2:
+            predictions = predictions[:, -1]
     else:
         predictions = model.predict(tst_X)
     score = scoring(tst_y, predictions)
     return score
 
 
-def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=PROBA):
+def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=PROBA):
     parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
     scores = parallel(
         delayed(validation)(
@@ -157,11 +158,12 @@ def best_alternative_model(
     X,
     y,
 ):
-
-    kwargs = dict(cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba)
-    if alternative_n_jobs > 1:
-        parallel = Parallel(
-            n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
+    parallel = Parallel(
+        n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
+    )
+    result = parallel(
+        delayed(cross_val_score)(
+            pipeline, X, y, cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba
         )
         result = parallel(
             delayed(cross_val_score)(pipeline, X, y, **kwargs)
@@ -269,6 +271,8 @@ def get_valid_encoders(column):
     n_unique = column.nunique()
     if (n_unique / column.size) > MAX_RELATIVE_CARDINALITY:
         return []
+    if n_unique > MAX_ABSOLUTE_CARDINALITY:
+        return []
 
     if n_unique < 3:
         if column.apply(type).eq(str).any():
@@ -329,7 +333,7 @@ def recode_categoricals(
 
 
 def feature_engineering(X, y, model_path, **kwargs):
-    model = basic_preprocess(X.copy())
+    model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
     model = find_best_subset(X, y, model, **kwargs)
     model = encode_categoricals(X, y, model, **kwargs)
     model = recode_categoricals(X, y, model, **kwargs)
