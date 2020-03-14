@@ -6,7 +6,7 @@ from functools import partial
 
 
 def xgboost_objective(
-    model, X_train, y_train, X_test, cv, scoring, maximize, trial,
+    model, X_train, y_train, X_test, cv, scoring, maximize, probability, trial,
 ):
     min_child_weight = trial.suggest_loguniform("min_child_weight", 1e-1, 1e3)
     # gamma = [0.5, 1, 1.5, 2, 5]
@@ -50,11 +50,21 @@ def xgboost_objective(
             early_stopping_rounds=20,
         )
 
-        oof[idxV] += new_model.predict_proba(X_act_val)[:, 1]
+        if probability:
+            oof_preds = new_model.predict_proba(X_act_val)[:, 1]
+        else:
+            oof_preds = new_model.predict(X_act_val)
+        oof[idxV] += oof_preds
         if X_test is not None:
-            preds += new_model.predict_proba(X_test)[:, 1] / cv.n_splits
+            if probability:
+                preds += new_model.predict_proba(X_test)[:, 1] / cv.n_splits
+            else:
+                preds += new_model.predict(X_test) / cv.n_splits
 
         n_iterations.append(new_model.model.best_iteration)
+
+    if X_test is not None and not probability:
+        preds = preds.round().astype(int)
 
 
     iter_mean = np.mean(n_iterations)
@@ -68,7 +78,7 @@ def xgboost_objective(
 
 
 def optimize_xboost(
-    model, X_train, y_train, X_test, cv, scoring, maximize, n_trials=20
+    model, X_train, y_train, X_test, cv, scoring, maximize, proba, n_trials=20
 ):
     objective = partial(
         xgboost_objective,
@@ -79,6 +89,7 @@ def optimize_xboost(
         cv,
         scoring,
         maximize,
+        proba
     )
 
     study = optuna.create_study()
