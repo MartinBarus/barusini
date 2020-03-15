@@ -21,8 +21,9 @@ from barusini.transformers.basic_transformers import MissingValueImputer
 from barusini.transformers.encoders import (
     CustomOneHotEncoder,
     CustomLabelEncoder,
-    TargetEncoder,
 )
+from barusini.transformers.target_encoders import TargetEncoder
+from barusini.transformers.text_encoders import TfIdfPCAEncoder, TfIdfEncoder
 from barusini.model_tuning import optimize_xboost
 from barusini.utils import (
     get_terminal_size,
@@ -122,7 +123,7 @@ def validation(model, X, y, train, test, scoring, proba=PROBA):
     return score
 
 
-def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=PROBA):
+def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=PROBA):
     parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
     scores = parallel(
         delayed(validation)(
@@ -160,12 +161,11 @@ def best_alternative_model(
     X,
     y,
 ):
-    parallel = Parallel(
-        n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
-    )
-    result = parallel(
-        delayed(cross_val_score)(
-            pipeline, X, y, cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba
+
+    kwargs = dict(cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba)
+    if alternative_n_jobs > 1:
+        parallel = Parallel(
+            n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
         )
         result = parallel(
             delayed(cross_val_score)(pipeline, X, y, **kwargs)
@@ -258,8 +258,7 @@ def find_best_subset(X, y, model, **kwargs):
 
 def get_encoding_generator(feature, encoders, drop=False):
     def categorical_encoding_generator(model):
-        for enc_class in trange(encoders):
-            enc = enc_class(used_cols=[feature])
+        for encoder in trange(encoders):
             new_model = copy.deepcopy(model)
             if drop:
                 new_model.remove_transformers([feature], partial_match=False)
@@ -271,19 +270,31 @@ def get_encoding_generator(feature, encoders, drop=False):
 
 def get_valid_encoders(column):
     n_unique = column.nunique()
-    if (n_unique / column.size) > MAX_RELATIVE_CARDINALITY:
-        return []
-    if n_unique > MAX_ABSOLUTE_CARDINALITY:
-        return []
+    too_many = ((n_unique / column.size) > MAX_RELATIVE_CARDINALITY) or (
+        n_unique > MAX_ABSOLUTE_CARDINALITY
+    )
+    if too_many:
+        if str(column.dtypes) == "object":
+            return [
+                TfIdfPCAEncoder(used_cols=[column.name], n_components=20),
+                TfIdfEncoder(used_cols=[column.name], vocab_size=20),
+            ]
+        else:
+            return []
 
     if n_unique < 3:
         if column.apply(type).eq(str).any():
-            return [CustomLabelEncoder]
+            return [CustomLabelEncoder(used_cols=[column.name])]
         return []
 
-    encoders = [TargetEncoder]
+    encoders = [TargetEncoder(used_cols=[column.name])]
     if n_unique < 10:
-        encoders.extend([CustomOneHotEncoder, CustomLabelEncoder])
+        encoders.extend(
+            [
+                CustomOneHotEncoder(used_cols=[column.name]),
+                CustomLabelEncoder(used_cols=[column.name]),
+            ]
+        )
     return encoders
 
 
@@ -295,7 +306,9 @@ def encode_categoricals(X, y, model, **kwargs):
     print("Encoding stage for ", categoricals)
     for feature in trange(categoricals):
         encoders = get_valid_encoders(X[feature])
-        print(f"Encoders for {feature}:", [x.__name__ for x in encoders])
+        print(
+            f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders]
+        )
         if encoders:
             model = generic_change(
                 X,
@@ -320,7 +333,9 @@ def recode_categoricals(X, y, model, max_unique=50, **kwargs):
     print("Trying to recode following categorical values:", categoricals)
     for feature in trange(categoricals):
         encoders = get_valid_encoders(X[feature])
-        print(f"Encoders for {feature}:", [x.__name__ for x in encoders])
+        print(
+            f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders]
+        )
         if encoders:
             model = generic_change(
                 X,
@@ -334,11 +349,12 @@ def recode_categoricals(X, y, model, max_unique=50, **kwargs):
 
 
 @duration("Feature engineering")
-def feature_engineering(X, y, model_path, **kwargs):
+def feature_engineering(X, y, model_path, recode_cat=True, **kwargs):
     model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
     model = find_best_subset(X, y, model, **kwargs)
     model = encode_categoricals(X, y, model, **kwargs)
-    model = recode_categoricals(X, y, model, **kwargs)
+    if recode_cat:
+        model = recode_categoricals(X, y, model, **kwargs)
     if model_path:
         save_object(model, model_path)
 
