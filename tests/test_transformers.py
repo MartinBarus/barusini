@@ -1,10 +1,10 @@
 import pytest
 import pandas as pd
 from barusini.transformers.encoders import (
-    TargetEncoder,
     CustomOneHotEncoder,
     CustomLabelEncoder,
 )
+from barusini.transformers.target_encoders import TargetEncoder
 from barusini.utils import sanitize
 
 
