@@ -1,69 +1,64 @@
-import copy
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import KFold
-from barusini.transformers.encoders import Encoder
-from barusini.utils import unique_name, reshape
+from barusini.transformers.transformer import Transformer
+from barusini.transformers.encoders import Encoder, INDEX_STR
+from barusini.utils import unique_name
 
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import OneHotEncoder
+TARGET_STR = "[TE]"  # default target name
 
 
-class BaseEncoder(Encoder):
-    show_unseen = False
+class MeanEncoder(Transformer):
+    def __init__(self):
+        self.mean = None
+        self.columns = None
+        self.target_name = None
+        self.global_mean = None
+        self.target_name = None
 
-    def __init__(self, encoder=None, target_name="y", **kwargs):
-        """BaseEncoder serves as a wrapper of sklearn.Transformer that can
-        will be used for Target Encoding. This wrapper allows user to use any
-        Transformer to encode regression, binary or multi-class target. In
-        case of multi-class target, encoder will encode each target value.
-
-        :param encoder: sklearn.Transformer: Transformer to be used for encoding
-        :param target_name: str: optional: target output name
-        :param kwargs: omitted
-        """
-        super().__init__(**kwargs)
-        self.encoder_prototype = encoder
-        self.encoders = []
-        self.target_name_pattern = target_name
-        self.target_names = []
-
-    def fit(self, X, y, multi_class=False, **kwargs):
-        super().fit(X)
-        if not multi_class:
-            self.encoder_prototype.fit(X, y, **kwargs)
-            self.encoders = [copy.deepcopy(self.encoder_prototype)]
-            self.target_names = [self.target_name_pattern]
-        else:
-            y_vals = sorted(y.unique())
-            for y_val in y_vals:
-                encoder = copy.deepcopy(self.encoder_prototype)
-                y_act = 1 * (y == y_val)
-                encoder.fit(X, y_act, **kwargs)
-                self.encoders.append(encoder)
-                self.target_names.append(
-                    "{}{}".format(self.target_name_pattern, y_val)
-                )
+    def fit(self, X, y, target_name=None, **kwargs):
+        if target_name is None:
+            target_name = unique_name(X, TARGET_STR)
+        y = pd.DataFrame({target_name: y})
+        x = pd.concat([X, y], axis=1)
+        self.columns = list(X.columns)
+        self.mean = x.groupby(self.columns).mean()
+        self.target_name = target_name
+        self.global_mean = y.values.mean()
         return self
 
-    def transform(self, X, return_all_cols=True, **kwargs):
-        transformed = np.array([enc.predict(X) for enc in self.encoders])
-        return pd.DataFrame(transformed.T, columns=self.target_names)
+    def transform(self, X, **kwargs):
+        orig_index_name = X.index.name
+        index_name = unique_name(X, INDEX_STR)
+        X.index.name = index_name
+        X = (
+            X.reset_index()
+            .set_index(self.columns)
+            .join(self.mean)
+            .reset_index()
+            .set_index(index_name)
+        )
+        X.index.name = orig_index_name
+        unseen_rows = pd.isna(X[self.target_name])
+        if any(unseen_rows):
+            unseen = X.loc[unseen_rows, self.columns]
+            unseen = unseen.apply(
+                lambda x: "_".join([str(c) for c in x]), axis=1
+            ).value_counts()
+            print(
+                f"WARNING!: {unseen.shape[0]} unseen values for {self.columns}"
+                f", value counts:\n{unseen}"
+            )
+
+        X[self.target_name] = X[self.target_name].fillna(self.global_mean)
+        return X.sort_index()
+
+    def __str__(self):
+        return f"Mean encoder for feature '{self.target_name}':\n\t{self.mean}"
 
 
 class TargetEncoder(Encoder):
-    target_str = "[TE]"  # default target name
-    show_unseen = False
-    x_dim = 2
-
     def __init__(
-        self,
-        fold=None,
-        random_seed=42,
-        encoder=None,
-        multi_class=False,
-        **kwargs,
+        self, fold=None, random_seed=42, encoder=MeanEncoder, **kwargs
     ):
         super().__init__(**kwargs)
         if fold is None:
@@ -73,41 +68,28 @@ class TargetEncoder(Encoder):
         self.splits = None
         self.predictors = None
         self.main_predictor = None
-        self.predictors = []
-        self.encoder = BaseEncoder(encoder=encoder)
+        self.encoder = encoder
         self.train_shape = None
-        self.target_names = []
-        self.multi_class = multi_class
+        self.target_name = None
 
     def fit(self, X, y, *args, **kwargs):
         super().fit(X)
-        X = self.preprocess(X)
-        X = reshape(X[self.used_cols], self.x_dim)
+        X = self.preprocess(X)[self.used_cols]
         splits = []
         predictors = []
-
-        columns = [X.name] if len(X.shape) == 1 else X.columns
-        target_name = ", ".join(list(columns)) + f" {self.target_str}"
+        target_name = ", ".join(list(X.columns)) + f" {TARGET_STR}"
         target_name = unique_name(X, target_name)
-
+        self.target_name = target_name
         for train, test in self.fold.split(X):
             splits.append((train, test))
-            X_tr, y_tr = X.iloc[train], y.iloc[train]
-            enc = copy.deepcopy(self.encoder).fit(
-                X_tr, y_tr, multi_class=self.multi_class
-            )
+            XX, yy = X.iloc[train], y.iloc[train]
+            enc = self.encoder().fit(XX, yy, target_name=self.target_name)
             predictors.append(enc)
 
-        if self.multi_class:
-            self.target_names = [
-                f"{target_name}_{i}" for i in range(y.nunique())
-            ]
-        else:
-            self.target_names = [target_name]
         self.splits = splits
         self.predictors = predictors
-        self.main_predictor = copy.deepcopy(self.encoder).fit(
-            X, y, multi_class=self.multi_class
+        self.main_predictor = self.encoder().fit(
+            X, y, target_name=self.target_name
         )
         self.train_shape = X.shape
         return self
@@ -125,32 +107,26 @@ class TargetEncoder(Encoder):
     ):
         X = self.preprocess(X)
         if not train_data:
-            new_X = X.copy()
-            values = reshape(X[self.used_cols], self.x_dim)
-            values = self.main_predictor.transform(values).values
-            for i, col in enumerate(self.target_names):
-                new_X[col] = values[:, i]
-        else:
-            new_X = X.copy()
-            for (train, test), predictor in zip(self.splits, self.predictors):
-                act_new_X = reshape(X.iloc[test][self.used_cols], self.x_dim)
-                act_new_X = predictor.transform(act_new_X).values
-                for i, col in enumerate(self.target_names):
-                    if col not in new_X.columns:
-                        new_X[col] = 0
-                    col_idx = new_X.columns.tolist().index(col)
-                    new_X.iloc[test, col_idx] = act_new_X[:, i]
+            transformed_X = self.main_predictor.transform(X)
 
-        for target_name in self.target_names:
-            new_X[target_name] = new_X[target_name].astype(float)
+        else:
+            transformed_X = X.copy()
+            transformed_X[self.target_name] = None
+            for (train, test), predictor in zip(self.splits, self.predictors):
+                partial_transformed_X = predictor.transform(X.iloc[test])
+                transformed_X.iloc[test] = partial_transformed_X
+
+        transformed_X[self.target_name] = transformed_X[
+            self.target_name
+        ].astype(float)
 
         if not return_all_cols:
-            return new_X[self.target_names]
+            return transformed_X[[self.target_name]]
 
         if remove_original:
-            new_X = new_X.drop(self.used_cols, axis=1)
+            transformed_X = transformed_X.drop(self.used_cols, axis=1)
 
-        return new_X
+        return transformed_X
 
     def fit_transform(self, X, y, **kwargs):
         self.fit(X, y)
@@ -158,7 +134,7 @@ class TargetEncoder(Encoder):
         return transformed_X
 
     def output_columns(self):
-        return self.target_names
+        return [self.target_name]
 
     def __str__(self):
         if self.main_predictor is not None:
@@ -167,17 +143,4 @@ class TargetEncoder(Encoder):
             encoder_str = "Unfitted Transformer"
         return (
             f"Target encoder for feature '{self.used_cols}'" f":\n{encoder_str}"
-        )
-
-
-class MeanTargetEncoder(TargetEncoder):
-    def __init__(self, **kwargs):
-        super().__init__(
-            encoder=Pipeline(
-                steps=[
-                    ("enc", OneHotEncoder(handle_unknown="ignore")),
-                    ("mean", LinearRegression()),
-                ]
-            ),
-            **kwargs,
         )

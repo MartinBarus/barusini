@@ -1,9 +1,7 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
-from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
 from barusini.transformers.encoders import GenericEncoder
-from barusini.transformers.target_encoders import TargetEncoder
 from barusini.utils import sanitize
 
 
@@ -19,7 +17,7 @@ class TfIdfEncoder(GenericEncoder):
             stop_words="english",
             ngram_range=(1, 1),
             max_features=vocab_size,
-            **kwargs,
+            **kwargs
         )
 
     def fit_names(self):
@@ -83,20 +81,4 @@ class TfIdfPCAEncoder(GenericEncoder):
         return (
             f"TF IDF followed by PCA of '{self.used_cols}':\n\t"
             f"Categories: {encoder_str}"
-        )
-
-
-class LinearTextEncoder(TargetEncoder):
-    target_str = "[TextTE]"
-    x_dim = 1
-
-    def __init__(self, **kwargs):
-        super().__init__(
-            encoder=Pipeline(
-                steps=[
-                    ("vec", TfidfVectorizer(max_features=100)),
-                    ("predictor", LinearRegression()),
-                ]
-            ),
-            **kwargs,
         )
