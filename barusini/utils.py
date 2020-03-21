@@ -66,12 +66,34 @@ def unique_value(x, name):
 
 
 def unique_name(X, name):
-    return unique_value(X.columns, sanitize(name))
+    if len(X.shape) == 2:
+        columns = X.columns
+    else:
+        columns = X.name
+    return unique_value(columns, sanitize(name))
 
 
 def make_dataframe(X):
     if type(X) is pd.Series:
-        X = pd.DataFrame({X.name: X})
+        X = pd.DataFrame({X.name: X.copy()})
+    else:
+        X = X.copy()
+    return X
+
+
+def subset(X, columns):
+    if len(X.shape) == 2:
+        return X[columns]
+    assert len(columns) == 1
+    return X
+
+
+def reshape(X, shape_len):
+    if shape_len == 2:
+        return make_dataframe(X)
+    if len(X.shape) == 2:
+        assert X.shape[1] == 1
+        return X[X.columns[0]]
     return X
 
 

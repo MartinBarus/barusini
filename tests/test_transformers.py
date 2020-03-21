@@ -1,10 +1,11 @@
 import pytest
 import pandas as pd
+import numpy as np
 from barusini.transformers.encoders import (
     CustomOneHotEncoder,
     CustomLabelEncoder,
 )
-from barusini.transformers.target_encoders import TargetEncoder
+from barusini.transformers.target_encoders import MeanTargetEncoder
 from barusini.utils import sanitize
 
 
