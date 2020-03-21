@@ -1,10 +1,11 @@
 import pytest
 import pandas as pd
+import numpy as np
 from barusini.transformers.encoders import (
     CustomOneHotEncoder,
     CustomLabelEncoder,
 )
-from barusini.transformers.target_encoders import TargetEncoder
+from barusini.transformers.target_encoders import MeanTargetEncoder
 from barusini.utils import sanitize
 
 
@@ -13,6 +14,13 @@ def simple_data():
     idx = range(1, 11)
     X = pd.DataFrame({"a": ["a", "b"] * 5}, index=idx)
     y = pd.Series(range(10), index=idx)
+    return X, y
+
+
+@pytest.fixture(scope="session")
+def simple_with_unseen(simple_data):
+    X, y = simple_data
+    X = pd.concat([X, pd.DataFrame({"a": ["c", "d"]})]).reset_index(drop=True)
     return X, y
 
 
@@ -30,15 +38,15 @@ def test_target_encoding_test(simple_data):
     X, y = simple_data
 
     # WHEN `fit` and `transform` is called
-    te = TargetEncoder()
+    te = MeanTargetEncoder()
     te.fit(X, y)
-    transformed_X = te.transform(X)[te.target_name]
+    transformed_X = te.transform(X)[te.target_names]
 
     # THEN index is the same as index of input DataFrame:
     assert all(X.index == transformed_X.index)
 
     # THEN transformed data matches expectation
-    assert all(transformed_X == [4, 5] * 5)
+    assert all(transformed_X.values.reshape(-1) == [4, 5] * 5)
 
 
 def test_target_encoding_train(simple_data):
@@ -47,7 +55,7 @@ def test_target_encoding_train(simple_data):
 
     # WHEN `fit_transform(X, y)` is called, or `transform(X, True)` is called
     # on fitted encoder
-    te = TargetEncoder()
+    te = MeanTargetEncoder()
     transformed_X = te.fit_transform(X, y)
     transformed_X2 = te.transform(X, train_data=True)
 
@@ -57,8 +65,12 @@ def test_target_encoding_train(simple_data):
 
     # THEN transformed data matches expectation
     expected = [5, 6, 4.5, 5.5, 4, 5, 3.5, 4.5, 3, 4]
-    assert all(transformed_X[te.target_name] == expected)
-    assert all(transformed_X2[te.target_name] == expected)
+    assert np.allclose(
+        transformed_X[te.target_names].values.reshape(-1), expected
+    )
+    assert np.allclose(
+        transformed_X2[te.target_names].values.reshape(-1), expected
+    )
     assert transformed_X.shape[1] == transformed_X2.shape[1] == 1
 
 
@@ -68,8 +80,8 @@ def test_te_with_more_cols(more_data):
 
     # WHEN `fit(X, y)` is called on Target encoder using pd.Series or
     # pd.DataFrame
-    te1 = TargetEncoder()
-    te2 = TargetEncoder()
+    te1 = MeanTargetEncoder()
+    te2 = MeanTargetEncoder()
     te1.fit(X["a"], y)
     te2.fit(X[["a"]], y)
 
@@ -81,8 +93,12 @@ def test_te_with_more_cols(more_data):
     assert all(X.index == transformed_X2.index)
 
     expected = [4, 5] * 5
-    assert all(transformed_X1[te1.target_name] == expected)
-    assert all(transformed_X2[te2.target_name] == expected)
+    assert np.allclose(
+        transformed_X1[te1.target_names].values.reshape(-1), expected
+    )
+    assert np.allclose(
+        transformed_X2[te2.target_names].values.reshape(-1), expected
+    )
 
     assert transformed_X1.shape[1] == transformed_X2.shape[1] == 3
 
