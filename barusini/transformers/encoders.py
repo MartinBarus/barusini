@@ -50,8 +50,7 @@ class Encoder(Transformer):
         n_unseen = len(unseen_vals)
         if n_unseen:
             print(
-                f"WARNING!: {n_unseen} unseen values for {self.used_cols}: "
-                f"{unseen_vals}"
+                f"WARNING!: {n_unseen} unseen values for {self.used_cols}"
             )
         X.loc[mask, self.used_cols] = self.top_vals
         return X
