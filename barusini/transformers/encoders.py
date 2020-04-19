@@ -70,7 +70,7 @@ class GenericEncoder(Encoder):
     def fit(self, X, *args, **kwargs):
         super().fit(X)
         processed = self.preprocess(X)
-        self.encoder.fit(processed)
+        self.encoder.fit(processed,  *args)
         assert (
             X.shape[0] == processed.shape[0]
         ), f"Expected to see {X.shape[0]} rows, found {processed.shape[0]}"

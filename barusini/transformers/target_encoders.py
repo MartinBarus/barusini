@@ -63,6 +63,7 @@ class TargetEncoder(Encoder):
         random_seed=42,
         encoder=None,
         multi_class=False,
+        create_single_col=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -78,11 +79,23 @@ class TargetEncoder(Encoder):
         self.train_shape = None
         self.target_names = []
         self.multi_class = multi_class
+        self.create_single_col = create_single_col
+
+    def create_single_feature(self, X):
+        if not self.create_single_col:
+            return X
+        X = X[self.used_cols].apply(
+            lambda x: "_x_".join([str(val) for val in x]), axis=1
+        )
+        X.name = "_x_".join(self.used_cols)
+        X = reshape(X, self.x_dim)
+        return X
 
     def fit(self, X, y, *args, **kwargs):
         super().fit(X)
         X = self.preprocess(X)
         X = reshape(X[self.used_cols], self.x_dim)
+        X = self.create_single_feature(X)
         splits = []
         predictors = []
 
@@ -120,13 +133,14 @@ class TargetEncoder(Encoder):
         X,
         train_data=False,
         return_all_cols=True,
-        remove_original=True,
+        remove_original=False,
         **kwargs,
     ):
         X = self.preprocess(X)
         if not train_data:
             new_X = X.copy()
             values = reshape(X[self.used_cols], self.x_dim)
+            values = self.create_single_feature(values)
             values = self.main_predictor.transform(values).values
             for i, col in enumerate(self.target_names):
                 new_X[col] = values[:, i]
@@ -134,6 +148,7 @@ class TargetEncoder(Encoder):
             new_X = X.copy()
             for (train, test), predictor in zip(self.splits, self.predictors):
                 act_new_X = reshape(X.iloc[test][self.used_cols], self.x_dim)
+                act_new_X = self.create_single_feature(act_new_X)
                 act_new_X = predictor.transform(act_new_X).values
                 for i, col in enumerate(self.target_names):
                     if col not in new_X.columns:
