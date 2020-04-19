@@ -97,7 +97,7 @@ def basic_preprocess(X, y, estimator=ESTIMATOR):
     transformers = []
     for column in X:
         if column not in dropped:
-            transformers.append(MissingValueImputer(column))
+            transformers.append(MissingValueImputer(used_cols=[column]))
 
     pipeline = Pipeline(transformers, estimator)
     pipeline.fit(X, y)
