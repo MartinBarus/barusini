@@ -5,9 +5,9 @@ from barusini.transformers.transformer import Transformer
 
 
 class MissingValueImputer(Transformer):
-    def __init__(self, column):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.missing = {}
-        self.used_cols = [column]
 
     def fit(self, X, *args, **kwargs):
         for col in self.used_cols:
@@ -37,30 +37,27 @@ class MissingValueImputer(Transformer):
 
 
 class ReorderColumnsTransformer(Transformer):
-    def __init__(self, columns):
-        self.columns = columns
-
     def transform(self, X, **kwargs):
-        return X[self.columns]
+        return X[self.used_cols]
 
     def fit(self, *args, **kwargs):
         # Nothing to do
         pass
 
     def __str__(self):
-        return f"Column Reorder/Subset transformer: '{self.columns}'"
+        return f"Column Reorder/Subset transformer: '{self.used_cols}'"
 
 
 class QuantizationTransformer(Transformer):
     def __init__(
         self,
-        column,
+        used_cols,
         n_bins=10,
         return_quantiles=False,
         hide=False,
         output_name=None,
     ):
-        self.used_cols = [column]
+        super().__init__(used_cols=used_cols)
         self.n_bins = n_bins
         self.return_quantiles = return_quantiles
         self.bins = None
@@ -69,7 +66,7 @@ class QuantizationTransformer(Transformer):
         self.output_name = output_name
 
     def fit(self, X, *args, **kwargs):
-        quantiles = np.linspace(0, 1, self.n_bins+1)
+        quantiles = np.linspace(0, 1, self.n_bins + 1)
         quantile_values = np.quantile(X[self.used_cols[0]], quantiles)
 
         # Map bins 1, 2, 3 to original quantile values 0.1, 0.2, 0.3

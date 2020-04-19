@@ -88,9 +88,11 @@ class Pipeline(Transformer):
         ]
 
     def __str__(self):
-        str_representation = ""
+        str_representation = (
+            f"Pipeline ({len(self.transformers)} Transformers):\n"
+        )
         for transformer in self.transformers:
-            str_representation += f"{str(transformer)}\n"
+            str_representation += f" * {str(transformer)}\n"
 
-        str_representation += f"{str(self.model)}"
+        str_representation += f" * {str(self.model)}\n"
         return str_representation

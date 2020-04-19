@@ -51,6 +51,12 @@ class BaseEncoder(Encoder):
         transformed = np.array([enc.predict(X) for enc in self.encoders])
         return pd.DataFrame(transformed.T, columns=self.target_names)
 
+    def __str__(self):
+        description = str(self.encoder_prototype)
+        description = description.split("\n")
+        description = "\n\t".join(description)
+        return "\t" + description
+
 
 class TargetEncoder(Encoder):
     target_str = "[TE]"  # default target name
@@ -177,7 +183,7 @@ class TargetEncoder(Encoder):
 
     def __str__(self):
         if self.main_predictor is not None:
-            encoder_str = str(self.main_predictor.mean)
+            encoder_str = str(self.main_predictor)
         else:
             encoder_str = "Unfitted Transformer"
         return (

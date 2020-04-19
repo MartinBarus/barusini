@@ -49,9 +49,7 @@ class Encoder(Transformer):
         unseen_vals = [x.split(JOIN_STR) for x in unseen_vals]
         n_unseen = len(unseen_vals)
         if n_unseen:
-            print(
-                f"WARNING!: {n_unseen} unseen values for {self.used_cols}"
-            )
+            print(f"WARNING!: {n_unseen} unseen values for {self.used_cols}")
         X.loc[mask, self.used_cols] = self.top_vals
         return X
 
@@ -70,20 +68,22 @@ class GenericEncoder(Encoder):
     def fit(self, X, *args, **kwargs):
         super().fit(X)
         processed = self.preprocess(X)
-        self.encoder.fit(processed,  *args)
+        self.encoder.fit(processed, *args)
         assert (
             X.shape[0] == processed.shape[0]
         ), f"Expected to see {X.shape[0]} rows, found {processed.shape[0]}"
         self.fit_names()
         return self
 
-    def transform(self, X, **kwargs):
+    def transform(self, X, remove_original=False, **kwargs):
         x = self.preprocess(X)
         x = self.encoder.transform(x)
         if self.is_sparse:
             x = x.todense()
         x = pd.DataFrame(x, columns=self.target_names, index=X.index)
-        result = X.join(x).drop(self.used_cols, axis=1)
+        result = X.join(x)
+        if remove_original:
+            result = result.drop(self.used_cols, axis=1)
         return result
 
     def preprocess(self, X):
@@ -94,10 +94,18 @@ class GenericEncoder(Encoder):
         return self.target_names
 
 
+class BaseLabelEncoder(LabelEncoder):
+    def fit(self, X, *args, **kwargs):
+        super().fit(X)
+
+    def fit_transform(self, X, *args, **kwargs):
+        super().fit_transform(X)
+
+
 class CustomLabelEncoder(GenericEncoder):
     def __init__(self, used_cols=None, **kwargs):
         super().__init__(used_cols=used_cols)
-        self.encoder = LabelEncoder()
+        self.encoder = BaseLabelEncoder()
 
     def preprocess(self, X):
         x = super().preprocess(X)

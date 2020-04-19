@@ -101,11 +101,38 @@ def duration(label):
     def duration_decorator(func):
         def measure_duration(*args, **kw):
             start = time.time()
-            res = func(*args, **kw)
-            time_elapsed = format_time(time.time() - start)
-            print(f"Duration of stage {label}: {time_elapsed}")
-            return res
+            try:
+                res = func(*args, **kw)
+                return res
+            finally:
+                time_elapsed = format_time(time.time() - start)
+                print(f"Duration of stage {label}: {time_elapsed}")
 
         return measure_duration
 
     return duration_decorator
+
+
+def update_kwargs(kwargs, force=False, **additional_kwargs):
+    for keyword, value in additional_kwargs.items():
+        if force or keyword not in kwargs:
+            kwargs[keyword] = value
+    return kwargs
+
+
+def kwargs_subset(kwargs, prefix, remove_prefix=True):
+    new_kwargs = {}
+    for key, val in kwargs.items():
+        if key.startswith(prefix):
+            if remove_prefix:
+                key = key[len(prefix) :]
+            new_kwargs[key] = val
+    return new_kwargs
+
+
+def kwargs_subset_except(kwargs, prefixes):
+    return {
+        key: val
+        for key, val in kwargs.items()
+        if not any([key.startswith(prefix) for prefix in prefixes])
+    }
