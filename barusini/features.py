@@ -14,14 +14,13 @@ from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 from joblib import Parallel, delayed
-
-from barusini.transformers.transformer import Pipeline
-from barusini.transformers.basic_transformers import MissingValueImputer
 from barusini.transformers import (
     CustomLabelEncoder,
     CustomOneHotEncoder,
     LinearTextEncoder,
     MeanTargetEncoder,
+    MissingValueImputer,
+    Pipeline,
     TfIdfEncoder,
     TfIdfPCAEncoder,
 )
