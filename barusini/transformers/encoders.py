@@ -1,10 +1,8 @@
 import pandas as pd
-
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
 from barusini.transformers.transformer import Transformer
-from barusini.utils import sanitize, make_dataframe
-
+from barusini.utils import make_dataframe, sanitize
 
 INDEX_STR = "index"  # default temporary index name
 JOIN_STR = "___XXX___YYY___"
@@ -34,6 +32,12 @@ class Encoder(Transformer):
         vals = X[self.used_cols].apply(self.join_cols, axis=1)
         self.unique_values = set(vals)
         self.top_vals = vals.value_counts().index.values[0].split(JOIN_STR)
+
+        # If original feature is single numeric feature, make it numeric again
+        if len(self.used_cols) == 1:
+            dtype = X.dtypes[self.used_cols[0]]
+            if str(dtype) != "object":
+                self.top_vals = pd.Series(self.top_vals).astype(dtype).to_list()
 
     def fit(self, X, *args, **kwargs):
         X = make_dataframe(X)
@@ -100,6 +104,9 @@ class BaseLabelEncoder(LabelEncoder):
 
     def fit_transform(self, X, *args, **kwargs):
         super().fit_transform(X)
+
+    def __str__(self):
+        return f"Label encoder for classes {self.classes_}"
 
 
 class CustomLabelEncoder(GenericEncoder):
