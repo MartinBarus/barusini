@@ -7,13 +7,16 @@
 # permission of Martin Barus or Miroslav Barus
 ####################################################################
 import copy
+
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
-from joblib import Parallel, delayed
+
+from barusini.model_tuning import XGBoostClassification, XGBoostRegression
 from barusini.transformers import (
     CustomLabelEncoder,
     CustomOneHotEncoder,
@@ -24,13 +27,7 @@ from barusini.transformers import (
     TfIdfEncoder,
     TfIdfPCAEncoder,
 )
-from barusini.model_tuning import optimize_xboost
-from barusini.utils import (
-    get_terminal_size,
-    save_object,
-    load_object,
-    duration,
-)
+from barusini.utils import duration, get_terminal_size, load_object, save_object
 
 ALLOWED_TRANSFORMERS = [
     CustomLabelEncoder,
@@ -420,15 +417,35 @@ def feature_engineering(
     return model
 
 
-def model_search(X_train, y_train, model, X_test, model_path):
-    best = optimize_xboost(
-        model, X_train, y_train, X_test, CV, SCORER, MAXIMIZE, PROBA
+def model_search(
+    X_train,
+    y_train,
+    model,
+    X_test,
+    y_test,
+    model_path,
+    cv=CV,
+    scorer=SCORER,
+    maximize=MAXIMIZE,
+    proba=PROBA,
+):
+    trial = XGBoostClassification()
+    best = trial.find_hyper_params(
+        model, X_train, y_train, None, cv, scorer, maximize, proba
     )
+
     new_model = copy.deepcopy(model)
     print("BEST PARAMS", best.params)
-    new_model.model = XGBClassifier(**best.params)
+    new_model.model = trial.default_model_class(**best.params)
     print(new_model)
     new_model.fit(X_train, y_train)
+    if X_test is not None:
+        if proba:
+            test_preds = new_model.predict_proba(X_test)
+        else:
+            test_preds = new_model.predict(X_test)
+        test_score = scorer(y_test, test_preds)
+        print(f"TEST SCORE FOR {scorer.__name__} SCORER is {test_score}")
     if model_path:
         print("Saving model to", model_path)
         save_object(model, model_path)
@@ -437,7 +454,7 @@ def model_search(X_train, y_train, model, X_test, model_path):
 
 def auto_ml(X, y, model_path=None, **kwargs):
     model = feature_engineering(X, y, model_path=model_path)
-    model = model_search(X, y, model, model_path, None, model_path)
+    model = model_search(X, y, model, model_path, None, None, model_path)
     return model
 
 
@@ -537,9 +554,10 @@ if __name__ == "__main__":
         dropped = dropped if dropped else []
         dropped = dropped + [target]
         X = X.drop(dropped, axis=1)
-        X_ = feature_engineering(X, y, model_path=model_file)
+        model = feature_engineering(X, y, model_path=model_file)
     if args.tune:
         if not args.features:
             y = X[target]
-        model = load_object(model_file)
-        model = model_search(X, y, model, None, model_file)
+            model = load_object(model_file)
+        best_model_file = model_file.replace(".", "_best.")
+        model = model_search(X, y, model, X, y, best_model_file)
