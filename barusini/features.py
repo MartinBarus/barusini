@@ -16,7 +16,7 @@ from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from tqdm import tqdm as tqdm
 
-from barusini.model_tuning import XGBoostClassification, XGBoostRegression
+from barusini.model_tuning import LightGBMTrial, XGBoostTrial
 from barusini.transformers import (
     CustomLabelEncoder,
     CustomOneHotEncoder,
@@ -48,6 +48,7 @@ STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 MAX_RELATIVE_CARDINALITY = 0.9
 MAX_ABSOLUTE_CARDINALITY = 10000
+TRIAL = XGBoostTrial()
 
 
 def format_str(x, total_len=TERMINAL_COLS):
@@ -428,16 +429,17 @@ def model_search(
     scorer=SCORER,
     maximize=MAXIMIZE,
     proba=PROBA,
+    trial=TRIAL,
 ):
-    trial = XGBoostClassification()
     best = trial.find_hyper_params(
         model, X_train, y_train, None, cv, scorer, maximize, proba
     )
 
     new_model = copy.deepcopy(model)
     print("BEST PARAMS", best.params)
-    new_model.model = trial.default_model_class(**best.params)
-    print(new_model)
+    print("TUNING TABLE")
+    trial.print_table()
+    new_model.model = trial.get_model_class(new_model)(**best.params)
     new_model.fit(X_train, y_train)
     if X_test is not None:
         if proba:
