@@ -192,8 +192,9 @@ class Trial:
             print(attr, "mean", attr_mean, "std", attr_std)
 
         score = scoring(y_train, oof)
+        print_score = score
         score = -score if maximize else score
-        print("XGB OOF CV=", score)
+        print("XGB OOF CV =", print_score)
         if csv_path:
             oof_path = csv_path.format(score, "OOF")
             np.savetxt(oof_path, oof)
@@ -268,7 +269,9 @@ class Trial:
                 for x in self.study.trials
             ]
         )
-        return results.sort_values("score", ascending=~self.maximize)
+        if self.maximize:
+            results["score"] *= -1
+        return results.sort_values("score", ascending=not self.maximize)
 
     def print_table(self):
         pd.set_option("display.max_rows", None)
@@ -279,6 +282,8 @@ class Trial:
 
     @staticmethod
     def is_classification(model):
+        if issubclass(model.__class__, bool):
+            return model
         if issubclass(model.__class__, ClassifierMixin):
             return True
         if issubclass(model.__class__, RegressorMixin):
