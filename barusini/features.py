@@ -29,14 +29,14 @@ from barusini.transformers import (
 )
 from barusini.utils import duration, get_terminal_size, load_object, save_object
 
-ALLOWED_TRANSFORMERS = [
+ALLOWED_TRANSFORMERS = (
     CustomLabelEncoder,
     CustomLabelEncoder,
     MeanTargetEncoder,
     TfIdfPCAEncoder,
     TfIdfEncoder,
     LinearTextEncoder,
-]
+)
 
 ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
 CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
@@ -89,7 +89,7 @@ def subset_numeric_features(X):
 
 
 @duration("Basic Preprocessing")
-def basic_preprocess(X, y, estimator=ESTIMATOR):
+def basic_preprocess(X, y, estimator):
     X = subset_numeric_features(X)
     dropped = drop_uniques(X)
     transformers = []
@@ -197,15 +197,15 @@ def generic_change(
     X,
     y,
     model_pipeline,
-    stage_name=STAGE_NAME,
     cv=CV,
     metric=SCORER,
     maximize=MAXIMIZE,
+    proba=PROBA,
+    stage_name=STAGE_NAME,
     generator=None,
     recursive=False,
     cv_n_jobs=-1,
     alternative_n_jobs=1,
-    proba=PROBA,
     **kwargs,
 ):
     print(format_str("Starting stage {}".format(stage_name)))
@@ -249,7 +249,9 @@ def generic_change(
 
 
 @duration("Find Best Subset")
-def find_best_subset(X, y, model, **kwargs):
+def find_best_subset(
+    X, y, model, cv=CV, metric=SCORER, maximize=MAXIMIZE, proba=PROBA, **kwargs
+):
     return generic_change(
         X,
         y,
@@ -259,6 +261,10 @@ def find_best_subset(X, y, model, **kwargs):
         recursive=True,
         cv_n_jobs=1,
         alternative_n_jobs=-1,
+        cv=cv,
+        metric=metric,
+        maximize=maximize,
+        proba=proba,
         **kwargs,
     )
 
@@ -319,7 +325,16 @@ def get_valid_encoders(column, y, classification, allowed_encoders):
 
 @duration("Encode categoricals")
 def encode_categoricals(
-    X, y, model, classification, allowed_encoders, **kwargs
+    X,
+    y,
+    model,
+    classification,
+    allowed_encoders,
+    cv=CV,
+    metric=SCORER,
+    maximize=MAXIMIZE,
+    proba=PROBA,
+    **kwargs,
 ):
     X_ = model.transform(X)
     categoricals = X_.select_dtypes(object).columns
@@ -339,6 +354,10 @@ def encode_categoricals(
                 model,
                 stage_name="Encoding categoricals {}".format(feature),
                 generator=get_encoding_generator(feature, encoders),
+                cv=cv,
+                metric=metric,
+                maximize=maximize,
+                proba=proba,
                 **kwargs,
             )
     return model
@@ -346,7 +365,17 @@ def encode_categoricals(
 
 @duration("Recode categoricals")
 def recode_categoricals(
-    X, y, model, classification, allowed_encoders, max_unique=50, **kwargs
+    X,
+    y,
+    model,
+    classification,
+    allowed_encoders,
+    max_unique=50,
+    cv=CV,
+    metric=SCORER,
+    maximize=MAXIMIZE,
+    proba=PROBA,
+    **kwargs,
 ):
     transformed_X = model.transform(X)
     transformed_X = subset_numeric_features(transformed_X)
@@ -370,6 +399,10 @@ def recode_categoricals(
                 model,
                 stage_name="Recoding {}".format(feature),
                 generator=get_encoding_generator(feature, encoders, drop=True),
+                cv=cv,
+                metric=metric,
+                maximize=maximize,
+                proba=proba,
                 **kwargs,
             )
     return model
@@ -379,17 +412,32 @@ def recode_categoricals(
 def feature_engineering(
     X,
     y,
-    model_path,
+    model_path=None,
     classification=True,
     subset_stage=True,
     encode_stage=True,
     recode_stage=True,
     allowed_transformers=ALLOWED_TRANSFORMERS,
+    max_unique=50,
+    estimator=ESTIMATOR,
+    cv=CV,
+    metric=SCORER,
+    maximize=MAXIMIZE,
+    proba=PROBA,
     **kwargs,
 ):
-    model = basic_preprocess(X.copy(), y, kwargs.get("estimator", ESTIMATOR))
+    model = basic_preprocess(X.copy(), y, estimator)
     if subset_stage:
-        model = find_best_subset(X, y, model, **kwargs)
+        model = find_best_subset(
+            X,
+            y,
+            model,
+            cv=cv,
+            metric=metric,
+            maximize=maximize,
+            proba=proba,
+            **kwargs,
+        )
 
     if encode_stage:
         model = encode_categoricals(
@@ -398,6 +446,10 @@ def feature_engineering(
             model,
             classification=classification,
             allowed_encoders=allowed_transformers,
+            cv=cv,
+            metric=metric,
+            maximize=maximize,
+            proba=proba,
             **kwargs,
         )
     if recode_stage:
@@ -407,6 +459,11 @@ def feature_engineering(
             model,
             classification=classification,
             allowed_encoders=allowed_transformers,
+            cv=cv,
+            metric=metric,
+            maximize=maximize,
+            proba=proba,
+            max_unique=max_unique,
             **kwargs,
         )
     if model_path:
@@ -422,14 +479,15 @@ def model_search(
     X_train,
     y_train,
     model,
-    X_test,
-    y_test,
-    model_path,
+    X_test=None,
+    y_test=None,
+    model_path=None,
     cv=CV,
     scorer=SCORER,
     maximize=MAXIMIZE,
     proba=PROBA,
     trial=TRIAL,
+    **kwargs,
 ):
     best = trial.find_hyper_params(
         model, X_train, y_train, None, cv, scorer, maximize, proba
@@ -437,8 +495,6 @@ def model_search(
 
     new_model = copy.deepcopy(model)
     print("BEST PARAMS", best.params)
-    print("TUNING TABLE")
-    trial.print_table()
     new_model.model = trial.get_model_class(new_model)(**best.params)
     new_model.fit(X_train, y_train)
     if X_test is not None:
@@ -454,10 +510,56 @@ def model_search(
     return new_model
 
 
-def auto_ml(X, y, model_path=None, **kwargs):
-    model = feature_engineering(X, y, model_path=model_path)
-    model = model_search(X, y, model, model_path, None, None, model_path)
-    return model
+def auto_ml(
+    X,
+    y,
+    X_test=None,
+    y_test=None,
+    model_path=None,
+    classification=True,
+    subset_stage=True,
+    encode_stage=True,
+    recode_stage=True,
+    allowed_transformers=ALLOWED_TRANSFORMERS,
+    max_unique=50,
+    cv=CV,
+    scorer=SCORER,
+    maximize=MAXIMIZE,
+    proba=PROBA,
+    trial=TRIAL,
+):
+    estimator = trial.get_model_class(classification)(seed=42)
+    model = feature_engineering(
+        X,
+        y,
+        model_path=model_path,
+        classification=classification,
+        subset_stage=subset_stage,
+        encode_stage=encode_stage,
+        recode_stage=recode_stage,
+        allowed_transformers=allowed_transformers,
+        max_unique=max_unique,
+        estimator=estimator,
+        cv=cv,
+        metric=scorer,
+        maximize=maximize,
+        proba=proba,
+        # **kwargs,
+    )
+    model = model_search(
+        X,
+        y,
+        model,
+        X_test=X_test,
+        y_test=y_test,
+        model_path=None,
+        cv=cv,
+        scorer=scorer,
+        maximize=maximize,
+        proba=proba,
+        trial=trial,
+    )
+    return {"model": model, "trial": trial}
 
 
 def predict(X, model, included_columns, output_path, probability):
