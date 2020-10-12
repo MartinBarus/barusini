@@ -1,4 +1,5 @@
 import copy
+import pandas as pd
 
 
 class Transformer:
@@ -86,6 +87,20 @@ class Pipeline(Transformer):
             for x in self.transformers
             if not self._match_name(x, columns, partial_match)
         ]
+
+    def varimp(self):
+        importance = None
+        if hasattr(self.model, "feature_importances_"):
+            importance = self.model.feature_importances_
+        elif hasattr(self.model, "coef_"):
+            importance = self.model.coef_
+        else:
+            raise ValueError(f"varimp not implemented for {type(self.model)}")
+
+        df = pd.DataFrame({"Feature": self.used_cols, "Importance": importance})
+        df = df.set_index("Feature")
+        df["Importance"] /= df["Importance"].max()
+        return df.sort_values("Importance", ascending=False)
 
     def __str__(self):
         str_representation = (

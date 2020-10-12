@@ -5,18 +5,19 @@ from barusini.transformers.transformer import Transformer
 
 
 class MissingValueImputer(Transformer):
-    def __init__(self, **kwargs):
+    def __init__(self, agg="median", **kwargs):
         super().__init__(**kwargs)
+        self.agg = agg
         self.missing = {}
 
     def fit(self, X, *args, **kwargs):
         for col in self.used_cols:
-            min_val = X[col].min()
-            if pd.isna(min_val):
-                min_val = 0
-            imputed_value = min_val - 1
-
-            self.missing[col] = imputed_value
+            value = X[col].agg(self.agg)
+            if type(value) is pd.Series:
+                assert len(value) == 1
+                value = value.values[0]
+            value = 0 if pd.isna(value) else value
+            self.missing[col] = value
         return self
 
     def transform(self, X, **kwargs):
@@ -30,7 +31,7 @@ class MissingValueImputer(Transformer):
         return X
 
     def __str__(self):
-        base = f"Missing Value Imputer: ["
+        base = f"Missing Value Imputer ({self.agg}): ["
         for col, value in self.missing.items():
             base += f"'{col}' imputed by '{value}'"
         return base + "]"
