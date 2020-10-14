@@ -11,12 +11,21 @@ import copy
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import log_loss
-from sklearn.model_selection import StratifiedKFold, cross_val_score
-from tqdm import tqdm as tqdm
 
-from barusini.model_tuning import LightGBMTrial, XGBoostTrial
+from tqdm import tqdm as tqdm
+from barusini.constants import (
+    ESTIMATOR,
+    CV,
+    SCORER,
+    PROBA,
+    MAXIMIZE,
+    STAGE_NAME,
+    TERMINAL_COLS,
+    MAX_RELATIVE_CARDINALITY,
+    MAX_ABSOLUTE_CARDINALITY,
+    TRIAL,
+)
+
 from barusini.transformers import (
     CustomLabelEncoder,
     CustomOneHotEncoder,
@@ -27,7 +36,18 @@ from barusini.transformers import (
     TfIdfEncoder,
     TfIdfPCAEncoder,
 )
-from barusini.utils import duration, get_terminal_size, load_object, save_object
+from barusini.transformers import (
+    CustomLabelEncoder,
+    CustomOneHotEncoder,
+    LinearTextEncoder,
+    MeanTargetEncoder,
+    MissingValueImputer,
+    Pipeline,
+    TfIdfEncoder,
+    TfIdfPCAEncoder,
+)
+from barusini.utils import duration, load_object, save_object
+
 
 ALLOWED_TRANSFORMERS = (
     CustomLabelEncoder,
@@ -37,18 +57,6 @@ ALLOWED_TRANSFORMERS = (
     TfIdfEncoder,
     LinearTextEncoder,
 )
-
-ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
-CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
-CLASSIFICATION = True
-SCORER = log_loss
-PROBA = True
-MAXIMIZE = False
-STAGE_NAME = "STAGE"
-TERMINAL_COLS = get_terminal_size()
-MAX_RELATIVE_CARDINALITY = 0.9
-MAX_ABSOLUTE_CARDINALITY = 10000
-TRIAL = XGBoostTrial()
 
 
 def format_str(x, total_len=TERMINAL_COLS):
