@@ -2,6 +2,7 @@ import copy
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import KFold
+from barusini.constants import STR_BULLET, STR_SPACE
 from barusini.transformers.encoders import Encoder
 from barusini.utils import unique_name, reshape
 
@@ -54,8 +55,8 @@ class BaseEncoder(Encoder):
     def __str__(self):
         description = str(self.encoder_prototype)
         description = description.split("\n")
-        description = "\n\t".join(description)
-        return "\t" + description
+        description = f"\n{STR_SPACE}".join(description)
+        return description
 
 
 class TargetEncoder(Encoder):
@@ -187,7 +188,8 @@ class TargetEncoder(Encoder):
         else:
             encoder_str = "Unfitted Transformer"
         return (
-            f"Target encoder for feature '{self.used_cols}'" f":\n{encoder_str}"
+            f"Target encoder for feature '{self.used_cols}'"
+            f"\n{STR_BULLET}{encoder_str}"
         )
 
 

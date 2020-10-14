@@ -1,6 +1,9 @@
 import copy
 import pandas as pd
 
+from barusini.constants import CV, STR_BULLET, STR_SPACE
+from barusini.model_tuning import cv_predictions
+
 
 class Transformer:
     def __init__(self, used_cols=None):
@@ -107,7 +110,57 @@ class Pipeline(Transformer):
             f"Pipeline ({len(self.transformers)} Transformers):\n"
         )
         for transformer in self.transformers:
-            str_representation += f" * {str(transformer)}\n"
+            transformer_str = str(transformer).replace("\n", f"\n{STR_SPACE}")
+            str_representation += f"{STR_BULLET}{transformer_str}\n"
 
-        str_representation += f" * {str(self.model)}\n"
+        str_representation += f"{STR_BULLET}{str(self.model)}\n"
+        return str_representation
+
+
+class Ensemble(Transformer):
+    def __init__(self, pipelines, meta, cv=CV):
+        self.pipelines = pipelines
+        self.meta = meta
+        self.cv = cv
+
+    def fit(self, X, y, *args, **kwargs):
+        oof_predictions = []
+        for pipeline in self.pipelines:
+            proba = hasattr(pipeline.model, "predict_proba")
+            oof, _, _ = cv_predictions(pipeline, X, y, None, self.cv, proba)
+            oof_predictions.append(oof)
+            pipeline.fit(X, y, *args, **kwargs)
+
+        train_X = pd.DataFrame(oof_predictions).T
+        self.meta.fit(train_X, y)
+
+    def _get_base_predictions(self, X):
+        predictions = []
+        for pipeline in self.pipelines:
+            proba = hasattr(pipeline.model, "predict_proba")
+            if proba:
+                preds = pipeline.predict_proba(X)
+            else:
+                preds = pipeline.predict(X)
+            predictions.append(preds)
+        return pd.DataFrame(predictions).T
+
+    def predict(self, X):
+        X = self._get_base_predictions(X)
+        return self.meta.predict(X)
+
+    def predict_proba(self, X):
+        X = self._get_base_predictions(X)
+        return self.meta.predict_proba(X)
+
+    def __str__(self):
+        str_representation = (
+            f"Ensemble,  ({str(self.meta.__class__.__name__)}, "
+            f"{len(self.pipelines)} Pipelines):\n"
+        )
+        for pipeline in self.pipelines:
+            pipeline_str = str(pipeline).replace("\n", f"\n{STR_SPACE}")
+            str_representation += f"{STR_BULLET}{pipeline_str}\n"
+
+        str_representation += f"{STR_BULLET}{str(self.meta)}\n"
         return str_representation

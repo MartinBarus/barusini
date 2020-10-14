@@ -12,4 +12,4 @@ from barusini.transformers.basic_transformers import (
     MissingValueImputer,
     QuantizationTransformer,
 )
-from barusini.transformers.transformer import Pipeline
+from barusini.transformers.transformer import Ensemble, Pipeline
