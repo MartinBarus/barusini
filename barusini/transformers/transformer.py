@@ -1,5 +1,8 @@
 import copy
+import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
+from scipy.optimize import LinearConstraint
 
 from barusini.constants import CV, STR_BULLET, STR_SPACE
 from barusini.model_tuning import cv_predictions
@@ -151,7 +154,9 @@ class Ensemble(Transformer):
 
     def predict_proba(self, X):
         X = self._get_base_predictions(X)
-        return self.meta.predict_proba(X)
+        if hasattr(self.meta, "predict_proba"):
+            return self.meta.predict_proba(X)
+        return self.meta.predict(X)
 
     def __str__(self):
         str_representation = (
@@ -164,3 +169,69 @@ class Ensemble(Transformer):
 
         str_representation += f"{STR_BULLET}{str(self.meta)}\n"
         return str_representation
+
+
+class WeightedAverage:
+    def __init__(self, min_weight=0.01, method="SLSQP", tol=1e-6):
+        self.weights = None
+        self.min_weight = min_weight
+        self.method = method
+        self.tol = tol
+
+    @staticmethod
+    def _get_optimization_fn(X, y):
+        def fn_to_minimize(x):
+            return ((X.dot(x) - y) ** 2).mean()
+
+        n_models = X.shape[1]
+        start = np.ones(n_models) / n_models
+        constraints = (
+            LinearConstraint(np.identity(n_models), 0, 1),
+            LinearConstraint(np.ones(n_models), 1, 1),
+        )
+
+        return fn_to_minimize, start, constraints
+
+    def _solve(self, X, y, zero_weight_idxs):
+        significant_models = [
+            i for i in range(X.shape[1]) if i not in zero_weight_idxs
+        ]
+        fn, start, constraints = self._get_optimization_fn(
+            X.iloc[:, significant_models], y
+        )
+        res = minimize(
+            fn, start, method=self.method, tol=self.tol, constraints=constraints
+        )
+        weights = np.zeros(X.shape[1])
+        for i, weight in enumerate(res.x):
+            weights[significant_models[i]] = weight
+
+        return weights
+
+    def _get_zero_weight_idxs(self, weights):
+        idx = -1
+        min_val = 1
+        for i, w in enumerate(weights):
+            if 0 < w < self.min_weight and w < min_val:
+                min_val, idx = w, i
+
+        if idx > -1:
+            return [idx]
+        return []
+
+    def fit(self, X, y):
+        assert self.min_weight < 1
+        zero_weight_idxs = []
+        weights = self._solve(X, y, zero_weight_idxs)
+        while self.min_weight and len(np.nonzero(weights)[0]) > 1:
+            new_zero_weights = self._get_zero_weight_idxs(weights)
+            if not len(new_zero_weights):
+                break
+
+            zero_weight_idxs.extend(new_zero_weights)
+            weights = self._solve(X, y, zero_weight_idxs)
+
+        self.weights = weights
+
+    def predict(self, X):
+        return X.dot(self.weights)
