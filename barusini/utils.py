@@ -54,9 +54,10 @@ def format_time(elapsed_time):
 
 
 def sanitize(x):
-    return (
-        x.replace("[", "_").replace("]", "_").replace(":", "_").replace("'", "")
-    )
+    problematic = '''";.,{}'[]:'''
+    for char in problematic:
+        x = x.replace(char, "_")
+    return x
 
 
 def unique_value(x, name):

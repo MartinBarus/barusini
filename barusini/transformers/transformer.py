@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
+from tqdm import tqdm as tqdm
 
 from barusini.constants import CV, STR_BULLET, STR_SPACE
 from barusini.model_tuning import cv_predictions
@@ -128,7 +129,7 @@ class Ensemble(Transformer):
 
     def fit(self, X, y, *args, **kwargs):
         oof_predictions = []
-        for pipeline in self.pipelines:
+        for pipeline in tqdm(self.pipelines):
             proba = hasattr(pipeline.model, "predict_proba")
             oof, _, _ = cv_predictions(pipeline, X, y, None, self.cv, proba)
             oof_predictions.append(oof)
@@ -174,6 +175,7 @@ class Ensemble(Transformer):
 class WeightedAverage:
     def __init__(self, min_weight=0.01, method="SLSQP", tol=1e-6):
         self.weights = None
+        self.res = None
         self.min_weight = min_weight
         self.method = method
         self.tol = tol
@@ -199,11 +201,11 @@ class WeightedAverage:
         fn, start, constraints = self._get_optimization_fn(
             X.iloc[:, significant_models], y
         )
-        res = minimize(
+        self.res = minimize(
             fn, start, method=self.method, tol=self.tol, constraints=constraints
         )
         weights = np.zeros(X.shape[1])
-        for i, weight in enumerate(res.x):
+        for i, weight in enumerate(self.res.x):
             weights[significant_models[i]] = weight
 
         return weights
@@ -212,7 +214,7 @@ class WeightedAverage:
         idx = -1
         min_val = 1
         for i, w in enumerate(weights):
-            if 0 < w < self.min_weight and w < min_val:
+            if w < self.min_weight and w < min_val and w != 0:
                 min_val, idx = w, i
 
         if idx > -1:
@@ -223,6 +225,7 @@ class WeightedAverage:
         assert self.min_weight < 1
         zero_weight_idxs = []
         weights = self._solve(X, y, zero_weight_idxs)
+        progress = tqdm(total=X.shape[1])
         while self.min_weight and len(np.nonzero(weights)[0]) > 1:
             new_zero_weights = self._get_zero_weight_idxs(weights)
             if not len(new_zero_weights):
@@ -230,7 +233,9 @@ class WeightedAverage:
 
             zero_weight_idxs.extend(new_zero_weights)
             weights = self._solve(X, y, zero_weight_idxs)
-
+            progress.update(1)
+        progress.update(progress.total-progress.n)
+        progress.close()
         self.weights = weights
 
     def predict(self, X):
