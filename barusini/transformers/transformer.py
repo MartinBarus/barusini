@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import inspect
 from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 from tqdm import tqdm as tqdm
@@ -36,6 +37,7 @@ class Pipeline(Transformer):
         self.model = model
         self.target = None
         self.trial = None
+        self.contribs_ = None
 
     def fit(self, X, y, **kwargs):
         X_transformed = self.fit_transform(X, y)
@@ -48,6 +50,11 @@ class Pipeline(Transformer):
             kwargs["eval_set"] = eval_set
 
         self.model.fit(X_transformed, y, **kwargs)
+
+        contrib_imp = self.contrib_imp(X_transformed)  # save feature importance if possible
+        if contrib_imp is not None:
+            self.contribs_ = contrib_imp
+
         self.target = y.name
         return self
 
@@ -108,7 +115,39 @@ class Pipeline(Transformer):
         df = pd.DataFrame({"Feature": self.used_cols, "Importance": importance})
         df = df.set_index("Feature")
         df["Importance"] /= df["Importance"].max()
-        return df.sort_values("Importance", ascending=False)
+        df = df.sort_values("Importance", ascending=False)
+        if self.contribs_ is not None:
+            df = df.join(self.contribs_)
+            df = df.sort_values("Contribs", ascending=False)
+        return df
+
+    @staticmethod
+    def _supports_pred_cotribs(predic_fn):
+        s = inspect.signature(predic_fn)
+        return "pred_contrib" in s.parameters
+
+    def get_predict_contrib_fn(self):
+        if hasattr(self.model, "predict_proba"):
+            fn = self.model.predict_proba
+        else:
+            fn = self.model.predict
+        if self._supports_pred_cotribs(fn):
+            return fn
+
+    def contrib_imp(self, X=None):
+        if X is None:
+            return self.contribs_
+        contrib_fn = self.get_predict_contrib_fn()
+        if contrib_fn is not None:
+            contribs = contrib_fn(X, pred_contrib=True)
+            contribs = pd.DataFrame(
+                contribs, columns=self.used_cols + ["bias"]
+            )
+            fimp = contribs.abs().sum(0).sort_values(ascending=False)
+            fimp = pd.DataFrame({"Contribs": fimp})
+            fimp["Relative Contribs"] = fimp["Contribs"]
+            fimp["Relative Contribs"] /= fimp["Contribs"].drop("bias").max()
+            return fimp
 
     def __str__(self):
         str_representation = (
