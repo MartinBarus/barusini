@@ -1,10 +1,9 @@
-import copy
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import KFold
 from barusini.constants import STR_BULLET, STR_SPACE
 from barusini.transformers.encoders import Encoder
-from barusini.utils import unique_name, reshape
+from barusini.utils import deepcopy, unique_name, reshape
 
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
@@ -34,12 +33,12 @@ class BaseEncoder(Encoder):
         super().fit(X)
         if not multi_class:
             self.encoder_prototype.fit(X, y, **kwargs)
-            self.encoders = [copy.deepcopy(self.encoder_prototype)]
+            self.encoders = [deepcopy(self.encoder_prototype)]
             self.target_names = [self.target_name_pattern]
         else:
             y_vals = sorted(y.unique())
             for y_val in y_vals:
-                encoder = copy.deepcopy(self.encoder_prototype)
+                encoder = deepcopy(self.encoder_prototype)
                 y_act = 1 * (y == y_val)
                 encoder.fit(X, y_act, **kwargs)
                 self.encoders.append(encoder)
@@ -113,7 +112,7 @@ class TargetEncoder(Encoder):
         for train, test in self.fold.split(X):
             splits.append((train, test))
             X_tr, y_tr = X.iloc[train], y.iloc[train]
-            enc = copy.deepcopy(self.encoder).fit(
+            enc = deepcopy(self.encoder).fit(
                 X_tr, y_tr, multi_class=self.multi_class
             )
             predictors.append(enc)
@@ -126,7 +125,7 @@ class TargetEncoder(Encoder):
             self.target_names = [target_name]
         self.splits = splits
         self.predictors = predictors
-        self.main_predictor = copy.deepcopy(self.encoder).fit(
+        self.main_predictor = deepcopy(self.encoder).fit(
             X, y, multi_class=self.multi_class
         )
         self.train_shape = X.shape

@@ -7,18 +7,19 @@
 # permission of Martin Barus or Miroslav Barus
 ####################################################################
 import os
+import contextlib
 import pickle
 import pandas as pd
 import numpy as np
+from sklearn.base import ClassifierMixin, RegressorMixin
 import time
+import copy
 
-
-def get_terminal_size():
-    try:
-        _, size = os.popen("stty size", "r").read().split()
-        return int(size)
-    except ValueError:  # Running from Pycharm causes ValueError
-        return 101
+from barusini.constants import (
+    DEFAULT_CASSIFICATION_METRIC,
+    DEFAULT_REGRESSION_METRIC,
+    METRIC_DICT,
+)
 
 
 def save_object(o, path):
@@ -29,6 +30,11 @@ def save_object(o, path):
 def load_object(path):
     with open(path, "rb") as file:
         return pickle.load(file)
+
+
+def deepcopy(obj):
+    with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
+        return copy.deepcopy(obj)
 
 
 def _format_time_helper(elapsed_time, unit, next_unit, max_value):
@@ -54,7 +60,7 @@ def format_time(elapsed_time):
 
 
 def sanitize(x):
-    problematic = '''";.,{}'[]:'''
+    problematic = """";.,{}'[]:"""
     for char in problematic:
         x = x.replace(char, "_")
     return x
@@ -137,3 +143,60 @@ def kwargs_subset_except(kwargs, prefixes):
         for key, val in kwargs.items()
         if not any([key.startswith(prefix) for prefix in prefixes])
     }
+
+
+def get_metric_str(metric):
+    if type(metric) is not str:
+        return metric.__name__
+    return metric
+
+
+def is_classification(model):
+    if issubclass(model.__class__, ClassifierMixin):
+        return True
+    if issubclass(model.__class__, RegressorMixin):
+        return False
+
+    raise ValueError(
+        "Model is not subclass of neither " "ClassifierMixin nor RegressorMixin"
+    )
+
+
+def get_probability(metric):
+    metric = get_metric_str(metric)
+    if metric not in METRIC_DICT:
+        raise ValueError(
+            "Can not infer if probability is required " f"for {metric} score"
+        )
+    return METRIC_DICT[metric]["proba"]
+
+
+def get_maximize(metric):
+    metric = get_metric_str(metric)
+    if metric not in METRIC_DICT:
+        raise ValueError(
+            f"Can not infer if score {metric} should be maximized."
+        )
+    return METRIC_DICT[metric]["maximize"]
+
+
+def get_metric(classification):
+    if classification:
+        return DEFAULT_CASSIFICATION_METRIC
+    return DEFAULT_REGRESSION_METRIC
+
+
+def get_default_settings(proba, maximize, metric, classification, model):
+    if classification is None:
+        classification = is_classification(model)
+
+    if metric is None:
+        metric = get_metric(classification)
+
+    if proba is None:
+        proba = get_probability(metric)
+
+    if maximize is None:
+        maximize = get_maximize(metric)
+
+    return proba, maximize, metric, classification

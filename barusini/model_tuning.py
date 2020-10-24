@@ -3,11 +3,11 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
-from sklearn.base import ClassifierMixin, RegressorMixin
 
 import optuna
-from lightgbm import LGBMClassifier, LGBMRegressor
-from xgboost import XGBClassifier, XGBRegressor
+from lightgbm import LGBMModel
+from xgboost import XGBModel
+from barusini.utils import deepcopy
 
 LOG = "log"
 LOGINT = "logint"
@@ -41,7 +41,16 @@ def getattr_rec(obj, attributes):
 
 
 def cv_predictions(
-    model, X_train, y_train, X_test, cv, probability, attributes_to_monitor=[]
+    model,
+    X_train,
+    y_train,
+    X_test,
+    cv,
+    probability,
+    attributes_to_monitor=[],
+    print_split_info=False,
+    eval_set=False,  # used for xgb/lgbm
+    **additional_fit_params,
 ):
     """
 
@@ -63,25 +72,30 @@ def cv_predictions(
 
     preds = None
     if X_test is not None:
-        test_shape = copy.deepcopy(oof.shape)
+        test_shape = deepcopy(oof.shape)
         test_shape[0] = len(X_test)
         preds = np.zeros(test_shape)
 
     monitored_attributes = {attr: [] for attr in attributes_to_monitor}
     for i, (idxT, idxV) in enumerate(cv.split(X_train, y_train)):
-        print(" rows of train =", len(idxT), "rows of holdout =", len(idxV))
+        if print_split_info:
+            print(" rows of train =", len(idxT), "rows of holdout =", len(idxV))
         X_act_train = X_train.iloc[idxT]
         y_act_train = y_train.iloc[idxT]
 
         X_act_val = X_train.iloc[idxV]
         y_act_val = y_train.iloc[idxV]
 
+        if eval_set:
+            fit_params = {
+                "eval_set": [(X_act_val, y_act_val)],
+                **additional_fit_params,
+            }
+        else:
+            fit_params = additional_fit_params
+
         model.fit(
-            X_act_train,
-            y_act_train,
-            eval_set=[(X_act_val, y_act_val)],
-            verbose=0,
-            early_stopping_rounds=20,
+            X_act_train, y_act_train, **fit_params,
         )
 
         if probability:
@@ -112,7 +126,6 @@ class Parameter:
         self.param_args = param_args
 
     def suggest(self, trial):
-        # print(self.name, self.param_type, self.param_args)
         assert self.param_type in ALLOWED_DISTRIBUTIONS, ERR.format(
             self.param_type
         )
@@ -138,6 +151,7 @@ class Trial:
     default_params = {}
     static_params = {}
     attributes_to_monitor = {}
+    additional_fit_params = {}
 
     def __init__(self):
         self.study = optuna.create_study()
@@ -146,7 +160,6 @@ class Trial:
     @staticmethod
     def objective(
         pipeline,
-        model_class,
         X_train,
         y_train,
         X_test,
@@ -156,19 +169,41 @@ class Trial:
         probability,
         original_params,
         static_params,
+        additional_fit_params,
         attributes_to_monitor,
         csv_path,
+        print_intermediate_results,
         trial,
     ):
+        """Perform Hyper-Parameter Search
+
+        :param pipeline: barusini.transformer.Pipeline: pipeline object
+        :param X_train: pd.DataFrame: train data
+        :param y_train: pd.Series: train label
+        :param X_test: optional: pd.DataFrame: test data
+        :param cv: sklearn.model_selection._split class
+        :param scoring: callable: validation metric
+        :param maximize: bool: whether to maximize the metric or minimize
+        :param probability: bool: whether to predict probability or class
+        :param original_params: dict: parameters to tune
+        :param static_params: dict: fixed parameters
+        :param additional_fit_params: dict: additional fit parameters
+        :param attributes_to_monitor: dict: attributes to report back
+        :param csv_path: optional: str: path prefix for storing predictions
+        :param print_intermediate_results: bool: more verbose output
+        :param trial: optuna.Trial: hyper-parameter tuning trial object
+        :return:
+        """
+        print("csv_path", csv_path)
         params = {
             name: Parameter(name, param_type, param_args).suggest(trial)
             for name, (param_type, param_args) in original_params.items()
         }
         params = {**params, **static_params}
-
-        new_model = copy.deepcopy(pipeline)
-        new_model.model = model_class(**params)
-        print(params)
+        new_model = deepcopy(pipeline)
+        new_model.model = pipeline.model.__class__(**params)
+        if print_intermediate_results:
+            print(params)
 
         monitored_attrs = [
             attr["param"] for attr in attributes_to_monitor.values()
@@ -181,20 +216,29 @@ class Trial:
             cv,
             probability,
             monitored_attrs,
+            **additional_fit_params,
         )
 
         # In trees, monitor the best number of trees with early stopping
         for attr, info in attributes_to_monitor.items():
-            attr_mean = np.mean(monitored_attributes[info["param"]])
-            attr_std = np.std(monitored_attributes[info["param"]])
+            monitored_vals = monitored_attributes[info["param"]]
+            print(monitored_attributes, info["param"])
+            default = getattr(new_model.model, attr)
+            monitored_vals = [
+                default if x is None else x for x in monitored_vals
+            ]
+            attr_mean = np.mean(monitored_vals)
+            attr_std = np.std(monitored_vals)
             attr_value = info["type"](attr_mean)
             trial.suggest_int(attr, attr_value, attr_value)
-            print(attr, "mean", attr_mean, "std", attr_std)
+            if print_intermediate_results:
+                print(attr, "mean", attr_mean, "std", attr_std)
 
         score = scoring(y_train, oof)
         print_score = score
         score = -score if maximize else score
-        print("XGB OOF CV =", print_score)
+        if print_intermediate_results:
+            print("XGB OOF CV =", print_score)
         if csv_path:
             oof_path = csv_path.format(score, "OOF")
             np.savetxt(oof_path, oof)
@@ -213,30 +257,19 @@ class Trial:
         scoring,
         maximize,
         proba,
-        model_class=None,
-        params=None,
-        static_params=None,
-        attributes_to_monitor=None,
+        params={},
+        static_params={},
+        additional_fit_params={},
+        attributes_to_monitor={},
         csv_path=None,
         n_trials=20,
         n_jobs=1,
+        print_intermediate_results=False,
     ):
-        if not params:
-            params = self.default_params
-
-        if not static_params:
-            static_params = self.static_params
-
-        if not attributes_to_monitor:
-            attributes_to_monitor = self.attributes_to_monitor
-
-        if not model_class:
-            model_class = self.get_model_class(pipeline)
 
         objective = partial(
             self.objective,
             pipeline,
-            model_class,
             X_train,
             y_train,
             X_test,
@@ -246,8 +279,10 @@ class Trial:
             proba,
             params,
             static_params,
+            additional_fit_params,
             attributes_to_monitor,
             csv_path,
+            print_intermediate_results,
         )
 
         self.maximize = maximize
@@ -280,36 +315,27 @@ class Trial:
         pd.set_option("display.max_colwidth", None)
         print(self.table())
 
-    @staticmethod
-    def is_classification(model):
-        if issubclass(model.__class__, bool):
-            return model
-        if issubclass(model.__class__, ClassifierMixin):
-            return True
-        if issubclass(model.__class__, RegressorMixin):
-            return False
-        if hasattr(model, "model"):
-            return Trial.is_classification(model.model)
-        else:
-            raise ValueError(
-                "Model is not subclass of neither "
-                "ClassifierMixin nor RegressorMixin"
-            )
-
-    @staticmethod
-    def get_model_class(pipeline):
-        pass
-
 
 class TreeTrial(Trial):
-    pass
+    additional_fit_params = {
+        "eval_set": True,
+        "early_stopping_rounds": 20,
+    }
 
 
 class XGBoostTrial(TreeTrial):
-    attributes_to_monitor = {
-        "n_estimators": {"type": round, "param": "model.best_iteration"}
+    additional_fit_params = {
+        "verbose": 0,
     }
-    static_params = {"n_estimators": 10000, "tree_method": "hist", "seed": 42}
+
+    attributes_to_monitor = {
+        "n_estimators": {
+            "type": round,
+            "param": "model.best_iteration",
+            "default": "model.n_estimators",
+        }
+    }
+    static_params = {"n_estimators": 1000, "tree_method": "hist", "seed": 42}
     default_params = {
         "min_child_weight": (LOG, (1e-2, 1e2)),
         "max_depth": (INT, (3, 12)),
@@ -318,18 +344,19 @@ class XGBoostTrial(TreeTrial):
         "colsample_bytree": (UNIFORM, (0.6, 1)),
     }
 
-    @staticmethod
-    def get_model_class(pipeline):
-        if Trial.is_classification(pipeline):
-            return XGBClassifier
-        return XGBRegressor
-
 
 class LightGBMTrial(TreeTrial):
-    attributes_to_monitor = {
-        "n_estimators": {"type": round, "param": "model.best_iteration_"}
+    additional_fit_params = {
+        "verbose": 0,
     }
-    static_params = {"n_estimators": 10000, "seed": 42}
+    attributes_to_monitor = {
+        "n_estimators": {
+            "type": round,
+            "param": "model.best_iteration_",
+            "default": "model.n_estimators",
+        }
+    }
+    static_params = {"n_estimators": 1000, "seed": 42}
     default_params = {
         "min_child_samples": (LOGINT, (1, 1000)),
         "num_leaves": (LOGINT, (2 ** 3, 2 ** 12)),
@@ -338,8 +365,12 @@ class LightGBMTrial(TreeTrial):
         "colsample_bytree": (UNIFORM, (0.6, 1)),
     }
 
-    @staticmethod
-    def get_model_class(pipeline):
-        if Trial.is_classification(pipeline):
-            return LGBMClassifier
-        return LGBMRegressor
+
+def get_trial_for_model(model, **kwargs):
+    if isinstance(model, LGBMModel):
+        return LightGBMTrial(**kwargs)
+
+    if isinstance(model, XGBModel):
+        return LightGBMTrial(**kwargs)
+
+    return Trial(**kwargs)
