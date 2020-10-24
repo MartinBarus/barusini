@@ -16,25 +16,10 @@ from tqdm import tqdm as tqdm
 from barusini.constants import (
     ESTIMATOR,
     CV,
-    SCORER,
-    PROBA,
-    MAXIMIZE,
     STAGE_NAME,
     TERMINAL_COLS,
     MAX_RELATIVE_CARDINALITY,
     MAX_ABSOLUTE_CARDINALITY,
-    TRIAL,
-)
-
-from barusini.transformers import (
-    CustomLabelEncoder,
-    CustomOneHotEncoder,
-    LinearTextEncoder,
-    MeanTargetEncoder,
-    MissingValueImputer,
-    Pipeline,
-    TfIdfEncoder,
-    TfIdfPCAEncoder,
 )
 from barusini.transformers import (
     CustomLabelEncoder,
@@ -46,7 +31,14 @@ from barusini.transformers import (
     TfIdfEncoder,
     TfIdfPCAEncoder,
 )
-from barusini.utils import duration, load_object, save_object
+from barusini.utils import (
+    deepcopy,
+    duration,
+    get_default_settings,
+    get_probability,
+    load_object,
+    save_object,
+)
 
 
 ALLOWED_TRANSFORMERS = (
@@ -112,7 +104,7 @@ def basic_preprocess(X, y, estimator):
 
 def feature_reduction_generator(model):
     for idx in trange(len(model.transformers)):
-        new_model = copy.deepcopy(model)
+        new_model = deepcopy(model)
         del new_model.transformers[idx]
         yield new_model
 
@@ -121,7 +113,8 @@ def dummy_base_line(x):
     return x
 
 
-def validation(model, X, y, train, test, scoring, proba=PROBA):
+def validation(model, X, y, train, test, scoring, proba=None):
+    proba = get_probability(scoring) if proba is None else proba
     trn_X = X.loc[train]
     trn_y = y.loc[train]
     model.fit(trn_X, trn_y)
@@ -138,27 +131,25 @@ def validation(model, X, y, train, test, scoring, proba=PROBA):
     return score
 
 
-def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=PROBA):
+def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=None):
     parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
     scores = parallel(
-        delayed(validation)(
-            copy.deepcopy(model), X, y, train, test, scoring, proba
-        )
+        delayed(validation)(deepcopy(model), X, y, train, test, scoring, proba)
         for train, test in cv.split(X, y)
     )
 
     return np.mean(scores), model
 
 
-def cross_val_score_sequential(model, X, y, cv, scoring, proba=PROBA):
+def cross_val_score_sequential(model, X, y, cv, scoring, proba=None):
     scores = [
-        validation(copy.deepcopy(model), X, y, train, test, scoring, proba)
+        validation(deepcopy(model), X, y, train, test, scoring, proba)
         for train, test in cv.split(X, y)
     ]
     return np.mean(scores), model
 
 
-def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=PROBA):
+def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=None):
     if n_jobs < 2:
         return cross_val_score_sequential(model, X, y, cv, scoring, proba=proba)
     return cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba)
@@ -206,9 +197,9 @@ def generic_change(
     y,
     model_pipeline,
     cv=CV,
-    metric=SCORER,
-    maximize=MAXIMIZE,
-    proba=PROBA,
+    metric=None,
+    maximize=None,
+    proba=None,
     stage_name=STAGE_NAME,
     generator=None,
     recursive=False,
@@ -258,7 +249,7 @@ def generic_change(
 
 @duration("Find Best Subset")
 def find_best_subset(
-    X, y, model, cv=CV, metric=SCORER, maximize=MAXIMIZE, proba=PROBA, **kwargs
+    X, y, model, cv=CV, metric=None, maximize=None, proba=None, **kwargs
 ):
     return generic_change(
         X,
@@ -280,7 +271,7 @@ def find_best_subset(
 def get_encoding_generator(feature, encoders, drop=False):
     def categorical_encoding_generator(model):
         for encoder in trange(encoders):
-            new_model = copy.deepcopy(model)
+            new_model = deepcopy(model)
             if drop:
                 new_model.remove_transformers([feature], partial_match=False)
             new_model = new_model.add_transformators([encoder])
@@ -339,9 +330,9 @@ def encode_categoricals(
     classification,
     allowed_encoders,
     cv=CV,
-    metric=SCORER,
-    maximize=MAXIMIZE,
-    proba=PROBA,
+    metric=None,
+    maximize=None,
+    proba=None,
     **kwargs,
 ):
     X_ = model.transform(X)
@@ -380,9 +371,9 @@ def recode_categoricals(
     allowed_encoders,
     max_unique=50,
     cv=CV,
-    metric=SCORER,
-    maximize=MAXIMIZE,
-    proba=PROBA,
+    metric=None,
+    maximize=None,
+    proba=None,
     **kwargs,
 ):
     transformed_X = model.transform(X)
@@ -421,7 +412,6 @@ def feature_engineering(
     X,
     y,
     model_path=None,
-    classification=True,
     subset_stage=True,
     encode_stage=True,
     recode_stage=True,
@@ -429,12 +419,16 @@ def feature_engineering(
     max_unique=50,
     estimator=ESTIMATOR,
     cv=CV,
-    metric=SCORER,
-    maximize=MAXIMIZE,
-    proba=PROBA,
+    metric=None,
+    classification=None,
+    maximize=None,
+    proba=None,
     **kwargs,
 ):
     model = basic_preprocess(X.copy(), y, estimator)
+    proba, maximize, metric, classification = get_default_settings(
+        proba, maximize, metric, classification, model
+    )
     if subset_stage:
         model = find_best_subset(
             X,
@@ -491,19 +485,22 @@ def model_search(
     y_test=None,
     model_path=None,
     cv=CV,
-    scorer=SCORER,
-    maximize=MAXIMIZE,
-    proba=PROBA,
-    trial=TRIAL,
+    scorer=None,
+    maximize=None,
+    proba=None,
+    classification=None,
     **kwargs,
 ):
-    best = trial.find_hyper_params(
+    proba, maximize, scorer, classification = get_default_settings(
+        proba, maximize, scorer, classification, model
+    )
+    best = model.find_hyper_params(
         model, X_train, y_train, None, cv, scorer, maximize, proba
     )
 
-    new_model = copy.deepcopy(model)
+    new_model = deepcopy(model)
     print("BEST PARAMS", best.params)
-    new_model.model = trial.get_model_class(new_model)(**best.params)
+    new_model.model = model.trial.get_model_class(new_model)(**best.params)
     new_model.fit(X_train, y_train)
     if X_test is not None:
         if proba:
@@ -521,6 +518,7 @@ def model_search(
 def auto_ml(
     X,
     y,
+    estimator=ESTIMATOR,
     X_test=None,
     y_test=None,
     model_path=None,
@@ -531,12 +529,10 @@ def auto_ml(
     allowed_transformers=ALLOWED_TRANSFORMERS,
     max_unique=50,
     cv=CV,
-    scorer=SCORER,
-    maximize=MAXIMIZE,
-    proba=PROBA,
-    trial=TRIAL,
+    scorer=None,
+    maximize=None,
+    proba=None,
 ):
-    estimator = trial.get_model_class(classification)(seed=42)
     model = feature_engineering(
         X,
         y,
@@ -565,9 +561,9 @@ def auto_ml(
         scorer=scorer,
         maximize=maximize,
         proba=proba,
-        trial=trial,
+        classification=classification,
     )
-    return {"model": model, "trial": trial}
+    return model
 
 
 def predict(X, model, included_columns, output_path, probability):

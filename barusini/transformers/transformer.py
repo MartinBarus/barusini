@@ -1,4 +1,3 @@
-import copy
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
@@ -6,7 +5,8 @@ from scipy.optimize import LinearConstraint
 from tqdm import tqdm as tqdm
 
 from barusini.constants import CV, STR_BULLET, STR_SPACE
-from barusini.model_tuning import cv_predictions
+from barusini.model_tuning import cv_predictions, get_trial_for_model
+from barusini.utils import deepcopy, get_maximize, get_probability
 
 
 class Transformer:
@@ -35,6 +35,7 @@ class Pipeline(Transformer):
         self.transformers = transformers
         self.model = model
         self.target = None
+        self.trial = None
 
     def fit(self, X, y, **kwargs):
         X_transformed = self.fit_transform(X, y)
@@ -76,9 +77,9 @@ class Pipeline(Transformer):
         return self.model.predict_proba(X_transformed[self.used_cols])
 
     def add_transformators(self, transformers):
-        orig_transformers = [copy.deepcopy(x) for x in self.transformers]
+        orig_transformers = [deepcopy(x) for x in self.transformers]
         transformers = orig_transformers + transformers
-        return Pipeline(transformers, copy.deepcopy(self.model))
+        return Pipeline(transformers, deepcopy(self.model))
 
     @staticmethod
     def _match_name(transformer, columns, partial_match):
@@ -119,6 +120,68 @@ class Pipeline(Transformer):
 
         str_representation += f"{STR_BULLET}{str(self.model)}\n"
         return str_representation
+
+    def tune(
+        self,
+        X,
+        y,
+        cv,
+        score,
+        probability=None,
+        maximize=None,
+        params=None,
+        static_params=None,
+        additional_fit_params=None,
+        attributes_to_monitor=None,
+        n_trials=20,
+        n_jobs=4,
+    ):
+        if probability is None:
+            probability = get_probability(score)
+
+        if maximize is None:
+            maximize = get_maximize(score)
+
+        if self.trial is None:
+            self.trial = get_trial_for_model(self.model)
+
+        if params is None:
+            params = self.trial.default_params
+
+        if static_params is None:
+            static_params = self.trial.static_params
+
+        if additional_fit_params is None:
+            additional_fit_params = self.trial.additional_fit_params
+
+        if attributes_to_monitor is None:
+            attributes_to_monitor = self.trial.attributes_to_monitor
+
+        best = self.trial.find_hyper_params(
+            self,
+            X_train=X,
+            y_train=y,
+            X_test=None,
+            cv=cv,
+            scoring=score,
+            maximize=maximize,
+            proba=probability,
+            params=params,
+            static_params=static_params,
+            additional_fit_params=additional_fit_params,
+            attributes_to_monitor=attributes_to_monitor,
+            csv_path=None,
+            n_trials=n_trials,
+            n_jobs=n_jobs,
+        )
+        used_static_params = {
+            k: v
+            for k, v in static_params.items()
+            if k not in attributes_to_monitor
+        }
+        self.model = self.model.__class__(**best.params, **used_static_params)
+        self.fit(X, y)
+        return best
 
 
 class Ensemble(Transformer):
@@ -234,7 +297,7 @@ class WeightedAverage:
             zero_weight_idxs.extend(new_zero_weights)
             weights = self._solve(X, y, zero_weight_idxs)
             progress.update(1)
-        progress.update(progress.total-progress.n)
+        progress.update(progress.total - progress.n)
         progress.close()
         self.weights = weights
 
