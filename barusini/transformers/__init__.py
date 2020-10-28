@@ -9,6 +9,7 @@ from barusini.transformers.text_encoders import (
     TfIdfPCAEncoder,
 )
 from barusini.transformers.basic_transformers import (
+    Identity,
     MissingValueImputer,
     QuantizationTransformer,
 )

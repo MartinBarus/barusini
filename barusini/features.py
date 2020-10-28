@@ -24,6 +24,7 @@ from barusini.constants import (
 from barusini.transformers import (
     CustomLabelEncoder,
     CustomOneHotEncoder,
+    Identity,
     LinearTextEncoder,
     MeanTargetEncoder,
     MissingValueImputer,
@@ -89,13 +90,18 @@ def subset_numeric_features(X):
 
 
 @duration("Basic Preprocessing")
-def basic_preprocess(X, y, estimator):
+def basic_preprocess(X, y, estimator, impute_all=False):
     X = subset_numeric_features(X)
     dropped = drop_uniques(X)
+    missing_columns = X.apply(lambda x: any(pd.isna(x)))
+    missing_columns = missing_columns[missing_columns].index
     transformers = []
     for column in X:
         if column not in dropped:
-            transformers.append(MissingValueImputer(used_cols=[column]))
+            if column in missing_columns or impute_all:
+                transformers.append(MissingValueImputer(used_cols=[column]))
+            else:
+                transformers.append(Identity(used_cols=[column]))
 
     pipeline = Pipeline(transformers, estimator)
     pipeline.fit(X, y)
@@ -245,6 +251,46 @@ def generic_change(
     print("New", [x for x in new_cols if x not in old_cols])
     print(format_str("Stage {} finished".format(stage_name)))
     return model_pipeline
+
+
+def get_imputation_generator(column):
+    def find_imputation_generator(model):
+        for aggregation in ["mode", "mean", "min", "max", "new"]:
+            new_model = deepcopy(model)
+            new_model.remove_transformers([column])
+            new_model.transformers.append(
+                MissingValueImputer(used_cols=[column], agg=aggregation)
+            )
+            yield new_model
+
+    return find_imputation_generator
+
+
+@duration("Find Best Imputation")
+def find_best_imputation(
+    X, y, model, cv=CV, metric=None, maximize=None, proba=None, **kwargs
+):
+    imputed_columns = [
+        enc.used_cols[0]
+        for enc in model.transformers
+        if isinstance(enc, MissingValueImputer)
+    ]
+    imputed_columns = X[imputed_columns].apply(lambda x: any(pd.isna(x)))
+    imputed_columns = imputed_columns[imputed_columns].index
+    for column in imputed_columns:
+        model = generic_change(
+            X,
+            y,
+            model,
+            stage_name=f"Finding imputation for {column}",
+            generator=get_imputation_generator(column),
+            cv=cv,
+            metric=metric,
+            maximize=maximize,
+            proba=proba,
+            **kwargs,
+        )
+    return model
 
 
 @duration("Find Best Subset")
@@ -412,6 +458,7 @@ def feature_engineering(
     X,
     y,
     model_path=None,
+    imputation_stage=False,
     subset_stage=True,
     encode_stage=True,
     recode_stage=True,
@@ -429,6 +476,20 @@ def feature_engineering(
     proba, maximize, metric, classification = get_default_settings(
         proba, maximize, metric, classification, model
     )
+    if imputation_stage:
+        model = find_best_imputation(
+            X,
+            y,
+            model,
+            classification=classification,
+            allowed_encoders=allowed_transformers,
+            cv=cv,
+            metric=metric,
+            maximize=maximize,
+            proba=proba,
+            **kwargs,
+        )
+
     if subset_stage:
         model = find_best_subset(
             X,

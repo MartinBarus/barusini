@@ -2,6 +2,18 @@ import pandas as pd
 import numpy as np
 
 from barusini.transformers.transformer import Transformer
+from barusini.utils import sanitize
+
+
+class Identity(Transformer):
+    def fit(self, X, *args, **kwargs):
+        return self
+
+    def transform(self, X, **kwargs):
+        return X
+
+    def __str__(self):
+        return f"Identity : {self.used_cols}"
 
 
 class MissingValueImputer(Transformer):
@@ -9,14 +21,21 @@ class MissingValueImputer(Transformer):
         super().__init__(**kwargs)
         self.agg = agg
         self.missing = {}
+        self.new_names = {}
 
     def fit(self, X, *args, **kwargs):
+        aggregation = "min" if self.agg == "new" else self.agg
         for col in self.used_cols:
-            value = X[col].agg(self.agg)
+            value = X[col].agg(aggregation)
             if type(value) is pd.Series:
-                assert len(value) == 1
+                if len(value) != 1:
+                    assert (
+                        self.agg == "mode"
+                    ), f"Expected single value for agg {self.agg}, got {value}"
                 value = value.values[0]
             value = 0 if pd.isna(value) else value
+            if self.agg == "new":
+                value -= 1
             self.missing[col] = value
         return self
 
@@ -28,7 +47,14 @@ class MissingValueImputer(Transformer):
                 X[col] = x
             else:
                 print(f"Warning!: Column {col} expected but nor found {self}")
+        self.new_names = {
+            col: sanitize(f"{col} [{self.agg}]") for col in self.missing
+        }
+        X = X.rename(columns=self.new_names)
         return X
+
+    def output_columns(self):
+        return sorted(self.new_names.values())
 
     def __str__(self):
         base = f"Missing Value Imputer ({self.agg}): ["
