@@ -156,7 +156,7 @@ def cross_val_score_sequential(model, X, y, cv, scoring, proba=None):
 
 
 def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=None):
-    if n_jobs < 2:
+    if n_jobs < 2 and n_jobs >= 0:
         return cross_val_score_sequential(model, X, y, cv, scoring, proba=proba)
     return cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba)
 

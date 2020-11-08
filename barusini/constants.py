@@ -16,6 +16,7 @@ ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
 CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
 UNIVERSAL_CV = KFold(n_splits=3, random_state=42, shuffle=True)
 STAGE_NAME = "STAGE"
+JOIN_STR = "_X_"
 TERMINAL_COLS = get_terminal_size()
 MAX_RELATIVE_CARDINALITY = 0.9
 MAX_ABSOLUTE_CARDINALITY = 10000

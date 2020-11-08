@@ -50,13 +50,6 @@ class Pipeline(Transformer):
             kwargs["eval_set"] = eval_set
 
         self.model.fit(X_transformed, y, **kwargs)
-
-        contrib_imp = self.contrib_imp(
-            X_transformed
-        )  # save feature importance if possible
-        if contrib_imp is not None:
-            self.contribs_ = contrib_imp
-
         self.target = y.name
         return self
 
@@ -149,6 +142,9 @@ class Pipeline(Transformer):
             fimp = pd.DataFrame({"Contribs": fimp})
             fimp["Relative Contribs"] = fimp["Contribs"]
             fimp["Relative Contribs"] /= fimp["Contribs"].drop("bias").max()
+
+            if self.contribs_ is None:
+                self.contribs_ = fimp
             return fimp
 
     def __str__(self):

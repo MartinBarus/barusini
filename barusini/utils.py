@@ -18,6 +18,7 @@ import copy
 from barusini.constants import (
     DEFAULT_CASSIFICATION_METRIC,
     DEFAULT_REGRESSION_METRIC,
+    JOIN_STR,
     METRIC_DICT,
 )
 
@@ -200,3 +201,14 @@ def get_default_settings(proba, maximize, metric, classification, model):
         maximize = get_maximize(metric)
 
     return proba, maximize, metric, classification
+
+
+def join_cols(cols):
+    return JOIN_STR.join([str(x) for x in cols])
+
+
+def create_single_column(X, used_cols):
+    if len(used_cols) == 1:
+        return X[used_cols[0]].astype(str)
+    else:
+        return X[used_cols].apply(join_cols, axis=1)

@@ -2,10 +2,14 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
 from barusini.transformers.transformer import Transformer
-from barusini.utils import make_dataframe, sanitize
+from barusini.utils import (
+    create_single_column,
+    make_dataframe,
+    sanitize,
+)
+from barusini.constants import JOIN_STR
 
 INDEX_STR = "index"  # default temporary index name
-JOIN_STR = "___XXX___YYY___"
 
 
 class Encoder(Transformer):
@@ -24,12 +28,8 @@ class Encoder(Transformer):
             self.replace_unseen(x)
         return x
 
-    @staticmethod
-    def join_cols(cols):
-        return JOIN_STR.join([str(x) for x in cols])
-
     def fit_unique(self, X):
-        vals = X[self.used_cols].apply(self.join_cols, axis=1)
+        vals = create_single_column(X, self.used_cols)
         self.unique_values = set(vals)
         self.top_vals = vals.value_counts().index.values[0].split(JOIN_STR)
 
@@ -47,7 +47,7 @@ class Encoder(Transformer):
             self.fit_unique(X)
 
     def replace_unseen(self, X):
-        vals = X[self.used_cols].apply(self.join_cols, axis=1)
+        vals = create_single_column(X, self.used_cols)
         mask = ~vals.isin(self.unique_values)
         unseen_vals = vals.loc[mask].drop_duplicates()
         unseen_vals = [x.split(JOIN_STR) for x in unseen_vals]
