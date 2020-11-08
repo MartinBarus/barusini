@@ -5,7 +5,7 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 from tqdm import tqdm as tqdm
 
-from barusini.constants import CV, STR_BULLET, STR_SPACE
+from barusini.constants import UNIVERSAL_CV, STR_BULLET, STR_SPACE
 from barusini.model_tuning import cv_predictions, get_trial_for_model
 from barusini.utils import deepcopy, get_maximize, get_probability
 
@@ -51,7 +51,9 @@ class Pipeline(Transformer):
 
         self.model.fit(X_transformed, y, **kwargs)
 
-        contrib_imp = self.contrib_imp(X_transformed)  # save feature importance if possible
+        contrib_imp = self.contrib_imp(
+            X_transformed
+        )  # save feature importance if possible
         if contrib_imp is not None:
             self.contribs_ = contrib_imp
 
@@ -140,9 +142,9 @@ class Pipeline(Transformer):
         contrib_fn = self.get_predict_contrib_fn()
         if contrib_fn is not None:
             contribs = contrib_fn(X, pred_contrib=True)
-            contribs = pd.DataFrame(
-                contribs, columns=self.used_cols + ["bias"]
-            )
+            if contribs.shape[1] != len(self.used_cols) + 1:
+                return None  # Multiclass not implemented yet
+            contribs = pd.DataFrame(contribs, columns=self.used_cols + ["bias"])
             fimp = contribs.abs().sum(0).sort_values(ascending=False)
             fimp = pd.DataFrame({"Contribs": fimp})
             fimp["Relative Contribs"] = fimp["Contribs"]
@@ -224,20 +226,27 @@ class Pipeline(Transformer):
 
 
 class Ensemble(Transformer):
-    def __init__(self, pipelines, meta, cv=CV):
+    def __init__(self, pipelines, meta=None, cv=UNIVERSAL_CV):
         self.pipelines = pipelines
         self.meta = meta
         self.cv = cv
 
     def fit(self, X, y, *args, **kwargs):
+        shapes = set()
         oof_predictions = []
         for pipeline in tqdm(self.pipelines):
             proba = hasattr(pipeline.model, "predict_proba")
             oof, _, _ = cv_predictions(pipeline, X, y, None, self.cv, proba)
+            if len(oof.shape) == 1:
+                oof = oof.reshape(-1, 1)
+            shapes.add(oof.shape[1])
             oof_predictions.append(oof)
             pipeline.fit(X, y, *args, **kwargs)
 
-        train_X = pd.DataFrame(oof_predictions).T
+        assert len(shapes) == 1, "All models must have same output shape!"
+        train_X = pd.DataFrame(np.hstack(oof_predictions))
+        if self.meta is None:
+            self.meta = WeightedAverage(num_classes=shapes.pop())
         self.meta.fit(train_X, y)
 
     def _get_base_predictions(self, X):
@@ -248,8 +257,10 @@ class Ensemble(Transformer):
                 preds = pipeline.predict_proba(X)
             else:
                 preds = pipeline.predict(X)
+            if len(preds.shape) == 1:
+                preds = preds.reshape(-1, 1)
             predictions.append(preds)
-        return pd.DataFrame(predictions).T
+        return pd.DataFrame(np.hstack(predictions))
 
     def predict(self, X):
         X = self._get_base_predictions(X)
@@ -275,12 +286,15 @@ class Ensemble(Transformer):
 
 
 class WeightedAverage:
-    def __init__(self, min_weight=0.01, method="SLSQP", tol=1e-6):
+    def __init__(
+        self, num_classes=1, min_weight=0.01, method="SLSQP", tol=1e-6
+    ):
         self.weights = None
         self.res = None
         self.min_weight = min_weight
         self.method = method
         self.tol = tol
+        self.num_classes = num_classes
 
     @staticmethod
     def _get_optimization_fn(X, y):
@@ -323,8 +337,33 @@ class WeightedAverage:
             return [idx]
         return []
 
+    def process_target(self, y):
+        return np.hstack([1 * (y.values == i) for i in range(self.num_classes)])
+
+    def process_data(self, X):
+        new_X = []
+        num_models = X.shape[1] // self.num_classes
+        for i_class in range(self.num_classes):
+            act_class_cols = [
+                i_model * self.num_classes + i_class
+                for i_model in range(num_models)
+            ]
+            new_X.extend(X.iloc[:, act_class_cols].values)
+
+        return pd.DataFrame(new_X)
+
+    def inverse_predictions(self, y):
+        size = y.shape[0] // 2
+        return np.vstack(
+            [y[i * size : (i + 1) * size] for i in range(self.num_classes)]
+        ).T
+
     def fit(self, X, y):
         assert self.min_weight < 1
+        if self.num_classes > 1:
+            X = self.process_data(X)
+            y = self.process_target(y)
+
         zero_weight_idxs = []
         weights = self._solve(X, y, zero_weight_idxs)
         progress = tqdm(total=X.shape[1])
@@ -341,4 +380,15 @@ class WeightedAverage:
         self.weights = weights
 
     def predict(self, X):
-        return X.dot(self.weights)
+        if self.num_classes > 1:
+            X = self.process_data(X)
+
+        y = X.dot(self.weights)
+
+        if self.num_classes > 1:
+            y = self.inverse_predictions(y)
+
+        return y
+
+    def __str__(self):
+        return f"Weighted average: {self.weights}"
