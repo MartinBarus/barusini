@@ -13,7 +13,7 @@ class Identity(Transformer):
         return X
 
     def __str__(self):
-        return f"Identity : {self.used_cols}"
+        return f"Identity: {self.used_cols}"
 
 
 class MissingValueImputer(Transformer):

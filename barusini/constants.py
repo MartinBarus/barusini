@@ -1,5 +1,5 @@
 import os
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import log_loss, mean_squared_error
 
@@ -14,6 +14,7 @@ def get_terminal_size():
 
 ESTIMATOR = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
 CV = StratifiedKFold(n_splits=3, random_state=42, shuffle=True)
+UNIVERSAL_CV = KFold(n_splits=3, random_state=42, shuffle=True)
 STAGE_NAME = "STAGE"
 TERMINAL_COLS = get_terminal_size()
 MAX_RELATIVE_CARDINALITY = 0.9
