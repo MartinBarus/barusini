@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import KFold
-from barusini.constants import STR_BULLET, STR_SPACE
+from barusini.constants import STR_BULLET, STR_SPACE, JOIN_STR
 from barusini.transformers.encoders import Encoder
-from barusini.utils import deepcopy, unique_name, reshape
+from barusini.utils import create_single_column, deepcopy, unique_name, reshape
 
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
@@ -90,10 +90,8 @@ class TargetEncoder(Encoder):
     def create_single_feature(self, X):
         if not self.create_single_col:
             return X
-        X = X[self.used_cols].apply(
-            lambda x: "_x_".join([str(val) for val in x]), axis=1
-        )
-        X.name = "_x_".join(self.used_cols)
+        X = create_single_column(X, self.used_cols)
+        X.name = JOIN_STR.join(self.used_cols)
         X = reshape(X, self.x_dim)
         return X
 
