@@ -7,6 +7,7 @@ from sklearn.metrics import (
     log_loss,
 )
 from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.preprocessing import LabelEncoder
 
 from barusini.features import feature_engineering
 from barusini.transformers.transformer import Ensemble
@@ -46,6 +47,9 @@ def salary_data():
     test = pd.read_csv(test_path, header=None, names=columns, skiprows=1)
     train["target"] = train["target"].apply(transform_target)
     test["target"] = test["target"].apply(transform_target)
+    encoder = LabelEncoder()
+    train["relationship"] = encoder.fit_transform(train["relationship"])
+    test["relationship"] = encoder.transform(test["relationship"])
     return train, test
 
 
@@ -79,8 +83,9 @@ def run_integration(
             key: metric(test[target], model.predict(test))
             for key, model in models_dict.items()
         }
-    print(pd.Series(test_scores).sort_values())
     print(ensemble)
+    print(metric.__name__)
+    print(pd.Series(test_scores).sort_values())
 
 
 def test_binary_classification(salary_data):
