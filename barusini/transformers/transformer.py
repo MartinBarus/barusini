@@ -260,7 +260,12 @@ class Ensemble(Transformer):
 
     def predict(self, X):
         X = self._get_base_predictions(X)
-        return self.meta.predict(X)
+        predictions = self.meta.predict(X)
+
+        if len(predictions.shape) == 2:
+            return predictions.argmax(axis=1)
+
+        return predictions
 
     def predict_proba(self, X):
         X = self._get_base_predictions(X)
@@ -349,7 +354,7 @@ class WeightedAverage:
         return pd.DataFrame(new_X)
 
     def inverse_predictions(self, y):
-        size = y.shape[0] // 2
+        size = y.shape[0] // self.num_classes
         return np.vstack(
             [y[i * size : (i + 1) * size] for i in range(self.num_classes)]
         ).T
