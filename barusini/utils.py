@@ -14,6 +14,7 @@ import numpy as np
 from sklearn.base import ClassifierMixin, RegressorMixin
 import time
 import copy
+import functools
 
 from barusini.constants import (
     DEFAULT_CASSIFICATION_METRIC,
@@ -34,8 +35,8 @@ def load_object(path):
 
 
 def deepcopy(obj):
-    with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
-        return copy.deepcopy(obj)
+    # with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
+    return copy.deepcopy(obj)
 
 
 def _format_time_helper(elapsed_time, unit, next_unit, max_value):
@@ -107,6 +108,7 @@ def reshape(X, shape_len):
 
 def duration(label):
     def duration_decorator(func):
+        @functools.wraps(func)
         def measure_duration(*args, **kw):
             start = time.time()
             try:

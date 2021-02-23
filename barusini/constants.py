@@ -2,6 +2,7 @@ import os
 from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import log_loss, mean_squared_error
+import numpy as np
 
 
 def get_terminal_size():
@@ -92,7 +93,8 @@ METRIC_DICT = {
 
 
 def rmse(y_true, y_pred, sample_weight=None):
-    return mean_squared_error(y_true, y_pred, sample_weight=sample_weight)
+    mse = mean_squared_error(y_true, y_pred, sample_weight=sample_weight)
+    return np.sqrt(mse)
 
 
 DEFAULT_CASSIFICATION_METRIC = log_loss
