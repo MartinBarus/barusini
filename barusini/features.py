@@ -76,7 +76,8 @@ def drop_uniques(X, thr=0.99):
     nunique = X.nunique()
     dropped_cols = []
     for x in nunique.index:
-        if (nunique[x] / X.shape[0]) >= thr:
+        # only drop unique ints/strings, not floats
+        if "float" not in str(X.dtypes[x]) and (nunique[x] / X.shape[0]) >= thr:
             dropped_cols.append(x)
 
     return dropped_cols
@@ -175,7 +176,7 @@ def best_alternative_model(
 ):
 
     kwargs = dict(cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba)
-    if alternative_n_jobs > 1:
+    if alternative_n_jobs not in [0, 1]:
         parallel = Parallel(
             n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
         )

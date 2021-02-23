@@ -72,7 +72,7 @@ def cv_predictions(
 
     preds = None
     if X_test is not None:
-        test_shape = deepcopy(oof.shape)
+        test_shape = list(deepcopy(oof.shape))
         test_shape[0] = len(X_test)
         preds = np.zeros(test_shape)
 
@@ -111,9 +111,6 @@ def cv_predictions(
 
         for attr in attributes_to_monitor:
             monitored_attributes[attr].append(getattr_rec(model, attr))
-
-    if X_test is not None and not probability:
-        preds = preds.round().astype(int)
 
     return oof, preds, monitored_attributes
 
@@ -194,7 +191,6 @@ class Trial:
         :param trial: optuna.Trial: hyper-parameter tuning trial object
         :return:
         """
-        print("csv_path", csv_path)
         params = {
             name: Parameter(name, param_type, param_args).suggest(trial)
             for name, (param_type, param_args) in original_params.items()
@@ -222,7 +218,8 @@ class Trial:
         # In trees, monitor the best number of trees with early stopping
         for attr, info in attributes_to_monitor.items():
             monitored_vals = monitored_attributes[info["param"]]
-            print(monitored_attributes, info["param"])
+            if print_intermediate_results:
+                print(monitored_attributes, info["param"])
             default = getattr(new_model.model, attr)
             monitored_vals = [
                 default if x is None else x for x in monitored_vals
@@ -234,7 +231,10 @@ class Trial:
             if print_intermediate_results:
                 print(attr, "mean", attr_mean, "std", attr_std)
 
-        score = scoring(y_train, oof)
+        try:
+            score = scoring(y_train, oof)
+        except:
+            score = float("inf")
         print_score = score
         score = -score if maximize else score
         if print_intermediate_results:
@@ -331,11 +331,11 @@ class XGBoostTrial(TreeTrial):
     attributes_to_monitor = {
         "n_estimators": {
             "type": round,
-            "param": "model.best_iteration",
+            "param": "model._Booster.best_iteration",
             "default": "model.n_estimators",
         }
     }
-    static_params = {"n_estimators": 1000, "tree_method": "hist", "seed": 42}
+    static_params = {"n_estimators": 1000, "tree_method": "hist", "seed": 42, "n_jobs": 1}
     default_params = {
         "min_child_weight": (LOG, (1e-2, 1e2)),
         "max_depth": (INT, (3, 12)),
@@ -356,7 +356,7 @@ class LightGBMTrial(TreeTrial):
             "default": "model.n_estimators",
         }
     }
-    static_params = {"n_estimators": 1000, "seed": 42}
+    static_params = {"n_estimators": 1000, "seed": 42, "n_jobs": 1}
     default_params = {
         "min_child_samples": (LOGINT, (1, 1000)),
         "num_leaves": (LOGINT, (2 ** 3, 2 ** 12)),
@@ -371,6 +371,6 @@ def get_trial_for_model(model, **kwargs):
         return LightGBMTrial(**kwargs)
 
     if isinstance(model, XGBModel):
-        return LightGBMTrial(**kwargs)
+        return XGBoostTrial(**kwargs)
 
     return Trial(**kwargs)
