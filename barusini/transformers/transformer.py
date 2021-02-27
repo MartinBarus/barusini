@@ -98,7 +98,7 @@ class Pipeline(Transformer):
             if not self._match_name(x, columns, partial_match)
         ]
 
-    def varimp(self):
+    def varimp(self, X=None):
         importance = None
         if hasattr(self.model, "feature_importances_"):
             importance = self.model.feature_importances_
@@ -111,6 +111,10 @@ class Pipeline(Transformer):
         df = df.set_index("Feature")
         df["Importance"] /= df["Importance"].max()
         df = df.sort_values("Importance", ascending=False)
+
+        if X is not None and self.contribs_ is None:
+            self.contrib_imp(X)
+
         if self.contribs_ is not None:
             df = df.join(self.contribs_)
             df = df.sort_values("Contribs", ascending=False)
@@ -134,6 +138,9 @@ class Pipeline(Transformer):
             return self.contribs_
         contrib_fn = self.get_predict_contrib_fn()
         if contrib_fn is not None:
+            if len(set(self.used_cols)-set(X.columns)):
+                X = self.transform(X)
+            X = X[self.used_cols]
             contribs = contrib_fn(X, pred_contrib=True)
             if contribs.shape[1] != len(self.used_cols) + 1:
                 return None  # Multiclass not implemented yet

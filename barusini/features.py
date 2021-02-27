@@ -220,7 +220,7 @@ def generic_change(
     )
     print("BASE", base_score)
     original_best = base_score
-    old_cols = list(model_pipeline.transform(X).columns)
+    old_cols = model_pipeline.transform(X)[model_pipeline.used_cols].columns
     while True:
         best_pipeline, base_score = best_alternative_model(
             generator(model_pipeline),
@@ -243,7 +243,7 @@ def generic_change(
         if not recursive:
             break
 
-    new_cols = list(model_pipeline.transform(X).columns)
+    new_cols = model_pipeline.transform(X)[model_pipeline.used_cols].columns
     print("ORIGINAL BEST", original_best)
     print("NEW BEST", base_score)
     print("DIFF", abs(base_score - original_best))
