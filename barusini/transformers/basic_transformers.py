@@ -133,3 +133,35 @@ class QuantizationTransformer(Transformer):
             f"Quantization Transformer: [{self.used_cols[0]} "
             f"binned to {len(self.bins)} bins {self.bins}]"
         )
+
+
+class DateExtractor(Transformer):
+    def __init__(
+        self,
+        periods=["day", "dayofweek", "month", "dayofyear", "year"],
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        assert len(self.used_cols) == 1
+        self.time_col = self.used_cols[0]
+        self.periods = periods
+        self.output_names = []
+
+    def fit(self, X, *args, **kwargs):
+        self.output_names = [f"{self.time_col} _{x}_" for x in self.periods]
+        return self
+
+    def transform(self, X, **kwargs):
+        features = [X]
+        print(self.periods)
+        for i, period in enumerate(self.periods):
+            feature = getattr(X[self.time_col].dt, period)
+            feature.name = self.output_names[i]
+            features.append(feature)
+        return pd.concat(features, axis=1)
+
+    def output_columns(self):
+        return self.output_names
+
+    def __str__(self):
+        return f"Date Extractor of feature '{self.time_col}': {self.periods}"
