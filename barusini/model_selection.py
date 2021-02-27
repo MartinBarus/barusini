@@ -1,4 +1,52 @@
+from copy import deepcopy
+
+import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
+
+from barusini.utils import get_probability
+
+
+def validation(model, X, y, train, test, scoring, proba=None):
+    proba = get_probability(scoring) if proba is None else proba
+    trn_X = X.loc[train]
+    trn_y = y.loc[train]
+    model.fit(trn_X, trn_y)
+
+    tst_X = X.loc[test]
+    tst_y = y.loc[test]
+    if proba:
+        predictions = model.predict_proba(tst_X)
+        if predictions.shape[1] == 2:
+            predictions = predictions[:, -1]
+    else:
+        predictions = model.predict(tst_X)
+    score = scoring(tst_y, predictions)
+    return score
+
+
+def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=None):
+    parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
+    scores = parallel(
+        delayed(validation)(deepcopy(model), X, y, train, test, scoring, proba)
+        for train, test in cv.split(X, y)
+    )
+
+    return np.mean(scores), model
+
+
+def cross_val_score_sequential(model, X, y, cv, scoring, proba=None):
+    scores = [
+        validation(deepcopy(model), X, y, train, test, scoring, proba)
+        for train, test in cv.split(X, y)
+    ]
+    return np.mean(scores), model
+
+
+def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=None):
+    if n_jobs < 2 and n_jobs >= 0:
+        return cross_val_score_sequential(model, X, y, cv, scoring, proba=proba)
+    return cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba)
 
 
 class TimeSplit(object):

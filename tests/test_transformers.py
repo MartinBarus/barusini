@@ -138,7 +138,7 @@ def test_ohe_encoding(simple_data):
 
     # WHEN `fit_transform(X)` is called on OHE transformer
     ohe = CustomOneHotEncoder()
-    transformed_X = ohe.fit_transform(X)
+    transformed_X = ohe.fit_transform(X)[ohe.output_columns()]
 
     # THEN index is the same as index of the input DataFrame:
     assert all(X.index == transformed_X.index)
@@ -171,12 +171,12 @@ def test_ohe_with_more_cols(more_data):
 
     expected_a = [1, 0] * 5
     expected_b = [0, 1] * 5
-    assert all(transformed_X1[sanitize("[a] [OHE:a]")] == expected_a)
-    assert all(transformed_X1[sanitize("[a] [OHE:b]")] == expected_b)
-    assert all(transformed_X2[sanitize("[a] [OHE:a]")] == expected_a)
-    assert all(transformed_X2[sanitize("[a] [OHE:b]")] == expected_b)
+    assert all(transformed_X1[sanitize("[[a]] [OHE:a]")] == expected_a)
+    assert all(transformed_X1[sanitize("[[a]] [OHE:b]")] == expected_b)
+    assert all(transformed_X2[sanitize("[[a]] [OHE:a]")] == expected_a)
+    assert all(transformed_X2[sanitize("[[a]] [OHE:b]")] == expected_b)
 
-    assert transformed_X1.shape[1] == transformed_X2.shape[1] == 4
+    assert transformed_X1.shape[1] == transformed_X2.shape[1]
 
 
 def test_le_encoding(simple_data):
@@ -185,7 +185,7 @@ def test_le_encoding(simple_data):
 
     # WHEN `fit_transform(X)` is called on LE transformer
     le = CustomLabelEncoder()
-    transformed_X = le.fit_transform(X)
+    transformed_X = le.fit_transform(X)[le.output_columns()]
 
     # THEN index is the same as index of the input DataFrame:
     assert all(X.index == transformed_X.index)
@@ -215,10 +215,10 @@ def test_le_with_more_cols(more_data):
     assert all(X.index == transformed_X2.index)
 
     expected = [0, 1] * 5
-    assert all(transformed_X1[sanitize("[a] [LE]")] == expected)
-    assert all(transformed_X2[sanitize("[a] [LE]")] == expected)
+    assert all(transformed_X1[sanitize("[[a]] [LE]")] == expected)
+    assert all(transformed_X2[sanitize("[[a]] [LE]")] == expected)
 
-    assert transformed_X1.shape[1] == transformed_X2.shape[1] == 3
+    assert transformed_X1.shape[1] == transformed_X2.shape[1]
 
 
 def fit_transform(enc, X, y, *args, **kwargs):
@@ -235,9 +235,9 @@ def test_all_encoders(more_data, more_data_multiclass):
         CustomOneHotEncoder(used_cols=["a"]),
         CustomLabelEncoder(used_cols=["a"]),
         MeanTargetEncoder(used_cols=["a"]),
+        QuantizationTransformer(used_cols=["b"], n_bins=4),
         MissingValueImputer(used_cols=["b"]),
         LinearTextEncoder(used_cols=["c"]),
-        QuantizationTransformer(used_cols=["b"], n_bins=4),
         TfIdfEncoder(used_cols=["c"], tfidf_min_df=1),
         TfIdfPCAEncoder(used_cols=["c"], pca_n_components=1),
     ]

@@ -6,15 +6,17 @@
 # barusini can not be copied and/or distributed without the express
 # permission of Martin Barus or Miroslav Barus
 ####################################################################
-import os
 import contextlib
-import pickle
-import pandas as pd
-import numpy as np
-from sklearn.base import ClassifierMixin, RegressorMixin
-import time
 import copy
 import functools
+import os
+import pickle
+import time
+
+import numpy as np
+import pandas as pd
+from sklearn.base import ClassifierMixin, RegressorMixin
+from tqdm import tqdm as tqdm
 
 from barusini.constants import (
     DEFAULT_CASSIFICATION_METRIC,
@@ -214,3 +216,9 @@ def create_single_column(X, used_cols):
         return X[used_cols[0]].astype(str)
     else:
         return X[used_cols].apply(join_cols, axis=1)
+
+
+def trange(x):
+    if type(x) is int:
+        return tqdm(range(x), leave=False)
+    return tqdm(x, leave=False)
