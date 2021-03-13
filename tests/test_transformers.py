@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from barusini.transformers import (
+    ConfidenceIntervals,
     CustomLabelEncoder,
     CustomOneHotEncoder,
     LinearTextEncoder,
@@ -251,3 +252,27 @@ def test_all_encoders(more_data, more_data_multiclass):
     mdl.predict_proba(X)
     mdl.fit_transform(X, y)
     print(mdl)
+
+
+def test_confidence_intervals():
+    # GIVEN out of fold predictions with label
+    df = pd.DataFrame(np.random.random((1000, 2)), columns=["pred", "label"])
+    df["label"] = 1 * df["label"] > 0.5
+
+    # WHEN we estimate confidence intervals for specific quantiles q and their
+    # counter parts 1-q and transform predictions to show confidence intervals
+    quantiles = [0.05, 0.1, 0.3]
+    ci = ConfidenceIntervals()
+    ci.fit(df["label"], df["pred"], quantiles)
+    new_preds = ci.transform(df["pred"])
+
+    # THEN for every upper/lower bound, the relative number of labels being
+    # <= predictions, belonging to confidence intervals matches the quantiles
+    for conf_interval in quantiles:
+        for offset in [0, 1]:
+            conf_interval = abs(offset - conf_interval)  # q or 1-q
+            pred_col = f"prediction {conf_interval}"
+            match_conf_interval = df["label"] <= new_preds[pred_col]
+            matched = new_preds[match_conf_interval]
+            relative_match = matched.shape[0] / df.shape[0]
+            assert relative_match == conf_interval
