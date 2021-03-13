@@ -1,4 +1,7 @@
-from barusini.feature_engineering.basic_preprocess import basic_preprocess
+from barusini.feature_engineering.basic_preprocess import (
+    basic_preprocess,
+    get_pipeline,
+)
 from barusini.feature_engineering.encoding import (
     encode_categoricals,
     recode_categoricals,
