@@ -11,6 +11,7 @@ import copy
 import functools
 import os
 import pickle
+import re
 import time
 
 import numpy as np
@@ -67,7 +68,7 @@ def sanitize(x):
     problematic = """";.,{}'[]:"""
     for char in problematic:
         x = x.replace(char, "_")
-    return x
+    return re.sub(r"[^\x00-\x7F]+", " ", x)
 
 
 def unique_value(x, name):
