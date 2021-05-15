@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import ClassifierMixin, RegressorMixin
 from tqdm import tqdm as tqdm
+from inspect import signature
 
 from barusini.constants import (
     DEFAULT_CASSIFICATION_METRIC,
@@ -223,3 +224,11 @@ def trange(x):
     if type(x) is int:
         return tqdm(range(x), leave=False)
     return tqdm(x, leave=False)
+
+
+def copy_signature(source_fct):
+    def copy(target_fct):
+        target_fct.__signature__ = signature(source_fct)
+        target_fct.__doc__ = source_fct.__doc__
+        return target_fct
+    return copy
