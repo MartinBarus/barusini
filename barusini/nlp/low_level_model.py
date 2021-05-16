@@ -4,9 +4,7 @@ from transformers import AutoConfig, AutoModelForSequenceClassification
 
 
 class NlpNet(nn.Module):
-    def __init__(
-        self, backbone, n_classes, pretrained_weights,
-    ):
+    def __init__(self, backbone, n_classes, pretrained_weights, **kwargs):
 
         super(NlpNet, self).__init__()
         self.backbone_name = backbone

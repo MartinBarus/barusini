@@ -17,20 +17,26 @@ class NLPDataset(Dataset):
             truncation=True,
             return_tensors="pt",
         )
-        self.labels = self.df[label_col].values
         self.text = text_values
         self.eps = 1e-6
+        self.labels = label_col
+        if self.labels is not None:
+            self.labels = self.df[self.labels].values
 
     def __getitem__(self, idx):
         inpt = {
             key: self.tokenized_texts[key][idx] for key in self.tokenized_texts
         }
-        target = torch.tensor(self.labels[idx])
+
         feature_dict = {
             "idx": torch.tensor(idx).long(),
             "input": inpt,
-            "target": target.float(),
         }
+
+        if self.labels is not None:
+            target = torch.tensor(self.labels[idx])
+            feature_dict["target"] = target.float()
+
         return feature_dict
 
     def __len__(self):

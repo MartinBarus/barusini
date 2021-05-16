@@ -58,4 +58,6 @@ class NlpEnsemble:
 
     def oof_dataset(self):
         oof_datasets = [m.oof_dataset() for m in self.models]
+        for i, oof_df in enumerate(oof_datasets):
+            oof_df["fold"] = i
         return pd.concat(oof_datasets).reset_index(drop=True)
