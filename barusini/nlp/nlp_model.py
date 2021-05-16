@@ -9,6 +9,7 @@ from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
+import torch
 
 from barusini.nlp.data import NLPDataset
 from barusini.nlp.low_level_model import NlpNet
@@ -26,6 +27,7 @@ from torch.utils.data import (
     RandomSampler,
     SequentialSampler,
 )
+from tqdm import tqdm
 
 
 def get_data(x):
@@ -263,3 +265,71 @@ class NlpModel:
         if filecmp.cmp(last_checkpoint, best_checkpoint):
             print("Removing duplicated checkpoint")
             os.remove(best_checkpoint)
+
+
+class NlpScorer(torch.nn.Module):
+    def __init__(
+        self,
+        model_class=NlpNet,
+        input_cols=None,
+        n_tokens=None,
+        pretrained_weights=None,
+        **kwargs,
+    ):
+        super(NlpScorer, self).__init__()
+        self.model = model_class(**kwargs, pretrained_weights=None)
+        self.input_cols = input_cols
+        self.n_tokens = n_tokens
+        state = torch.load(pretrained_weights, map_location="cpu")
+        self.load_state_dict(state["state_dict"])
+        print("Loaded weights", pretrained_weights)
+
+    @staticmethod
+    def from_config(config_path):
+        config = NlpModel.parse_config(config_path)
+        return NlpScorer(**config)
+
+    def predict(self, test_file_path, num_workers=8, batch_size=16):
+        test = pd.read_csv(test_file_path)
+
+        test_ds = NLPDataset(
+            test, self.model.backbone_name, self.input_cols, None, self.n_tokens
+        )
+
+        test_dl = DataLoader(
+            dataset=test_ds,
+            batch_size=batch_size,
+            sampler=SequentialSampler(test_ds),
+            num_workers=num_workers,
+            pin_memory=False,
+            multiprocessing_context="fork",
+        )
+        return self._predict(test_dl)
+
+    def _predict(self, dl):
+        cuda = torch.cuda.is_available()
+        if cuda:
+            self.model.cuda()
+
+        self.model.eval()
+        all_preds = []
+        with torch.no_grad():
+            for batch_idx, inpt in tqdm(enumerate(dl), total=len(dl)):
+                input_dct = inpt["input"]
+                if cuda:
+                    for key in input_dct:
+                        input_dct[key] = input_dct[key].cuda()
+                preds = self.model(input_dct)["logits"]
+                if cuda:
+                    all_preds.extend(preds.cpu().tolist())
+                else:
+                    all_preds.extend(preds.tolist())
+
+                del input_dct
+                del inpt
+                del preds
+        if cuda:
+            self.model.cpu()
+
+        res = pd.DataFrame(all_preds)
+        return res
