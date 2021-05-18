@@ -6,6 +6,7 @@ import json
 import os
 import pickle
 from collections import OrderedDict
+from contextlib import ExitStack
 
 import numpy as np
 import pandas as pd
@@ -22,12 +23,7 @@ from pytorch_lightning.loggers import (
     TensorBoardLogger,
     TestTubeLogger,
 )
-from torch.utils.data import (
-    DataLoader,
-    RandomSampler,
-    SequentialSampler,
-)
-from tqdm import tqdm
+from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
 
 
 def get_data(x):
@@ -112,8 +108,6 @@ class NlpModel:
             self.experiment_name = f"{self.model_id}_{self.experiment_name}"
         self.experiment_path = self.artifact_path + self.experiment_name
         self.experiment_path = self.experiment_path + "/{val}/"
-
-        self.dct_file = self.experiment_path + "config.json"
         self.ckpt_save_path = self.experiment_path + "/ckpt/"
         self.logger_path = self.experiment_path
         self.oof_preds_file = self.experiment_path + "oof_preds.pickle"
@@ -146,11 +140,8 @@ class NlpModel:
                 print("Model already trained")
             return
 
-        dct_file = self.dct_file.format(val=self.val_split)
-        os.makedirs(os.path.dirname(dct_file), exist_ok=True)
-        with open(dct_file, "w") as file:
-            file.write(self._dct_str)
-
+        exp_path = self.experiment_path.format(val=self.val_split)
+        os.makedirs(exp_path, exist_ok=True)
         set_seed(self.seed)
         tr_dl, val_dl = self.get_data(train, val, num_workers)
         trainer = self.get_trainer(gpus)
@@ -174,6 +165,11 @@ class NlpModel:
 
         trainer.fit(model, tr_dl, val_dl)
         self.remove_duplicated_checkpoint()
+        ckpt_path = self.ckpt_save_path.format(val=self.val_split)
+        model.model.save_to_folder(ckpt_path)
+        ckpt_conf = os.path.join(ckpt_path, "high_level_config.json")
+        with open(ckpt_conf, "w") as file:
+            file.write(self._dct_str)
 
     def get_data(self, train, val, num_workers):
         train = get_data(train)
@@ -267,69 +263,3 @@ class NlpModel:
             os.remove(best_checkpoint)
 
 
-class NlpScorer(torch.nn.Module):
-    def __init__(
-        self,
-        model_class=NlpNet,
-        input_cols=None,
-        n_tokens=None,
-        pretrained_weights=None,
-        **kwargs,
-    ):
-        super(NlpScorer, self).__init__()
-        self.model = model_class(**kwargs, pretrained_weights=None)
-        self.input_cols = input_cols
-        self.n_tokens = n_tokens
-        state = torch.load(pretrained_weights, map_location="cpu")
-        self.load_state_dict(state["state_dict"])
-        print("Loaded weights", pretrained_weights)
-
-    @staticmethod
-    def from_config(config_path):
-        config = NlpModel.parse_config(config_path)
-        return NlpScorer(**config)
-
-    def predict(self, test_file_path, num_workers=8, batch_size=16):
-        test = pd.read_csv(test_file_path)
-
-        test_ds = NLPDataset(
-            test, self.model.backbone_name, self.input_cols, None, self.n_tokens
-        )
-
-        test_dl = DataLoader(
-            dataset=test_ds,
-            batch_size=batch_size,
-            sampler=SequentialSampler(test_ds),
-            num_workers=num_workers,
-            pin_memory=False,
-            multiprocessing_context="fork",
-        )
-        return self._predict(test_dl)
-
-    def _predict(self, dl):
-        cuda = torch.cuda.is_available()
-        if cuda:
-            self.model.cuda()
-
-        self.model.eval()
-        all_preds = []
-        with torch.no_grad():
-            for batch_idx, inpt in tqdm(enumerate(dl), total=len(dl)):
-                input_dct = inpt["input"]
-                if cuda:
-                    for key in input_dct:
-                        input_dct[key] = input_dct[key].cuda()
-                preds = self.model(input_dct)["logits"]
-                if cuda:
-                    all_preds.extend(preds.cpu().tolist())
-                else:
-                    all_preds.extend(preds.tolist())
-
-                del input_dct
-                del inpt
-                del preds
-        if cuda:
-            self.model.cpu()
-
-        res = pd.DataFrame(all_preds)
-        return res
