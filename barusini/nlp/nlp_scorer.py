@@ -62,7 +62,10 @@ class NlpScorer(torch.nn.Module):
         self.model.save_to_folder(folder_path)
 
     def predict(self, test_file_path, num_workers=8, batch_size=16):
-        test = pd.read_csv(test_file_path)
+        if type(test_file_path) is str:
+            test = pd.read_csv(test_file_path)
+        else:
+            test = test_file_path
 
         if self.model_folder is not None:
             load_from = self.model_folder
