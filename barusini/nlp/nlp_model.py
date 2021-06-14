@@ -93,6 +93,10 @@ class NlpModel:
         self.weight_decay = weight_decay
         self.pretrained_weights = pretrained_weights
         self.seed = seed
+        assert type(seed) not in [
+            list,
+            tuple,
+        ], "seed has to be a single number, use nlp_ensemble instead!"
 
         # create hash of important settings
         self._dct_str = json.dumps(get_attributes(self))
@@ -261,5 +265,3 @@ class NlpModel:
         if filecmp.cmp(last_checkpoint, best_checkpoint):
             print("Removing duplicated checkpoint")
             os.remove(best_checkpoint)
-
-
