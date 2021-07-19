@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from barusini.constants import CV
-from barusini.feature_engineering.generic_stage import (
+from barusini.tabular.stages.generic_stage import (
     generic_change,
     get_valid_encoders,
     subset_numeric_features,

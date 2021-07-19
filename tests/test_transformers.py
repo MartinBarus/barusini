@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from barusini.transformers import (
+from barusini.tabular.transformers import (
     ConfidenceIntervals,
     CustomLabelEncoder,
     CustomOneHotEncoder,

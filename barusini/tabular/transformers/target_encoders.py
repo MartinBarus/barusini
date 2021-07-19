@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import KFold
 from barusini.constants import STR_BULLET, STR_SPACE, JOIN_STR
-from barusini.transformers.encoders import Encoder
+from barusini.tabular.transformers.encoders import Encoder
 from barusini.utils import create_single_column, deepcopy, unique_name, reshape
 
 from sklearn.pipeline import Pipeline

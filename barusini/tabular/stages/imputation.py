@@ -3,8 +3,8 @@ from copy import deepcopy
 import pandas as pd
 
 from barusini.constants import CV
-from barusini.feature_engineering.generic_stage import generic_change
-from barusini.transformers import MissingValueImputer
+from barusini.tabular.stages.generic_stage import generic_change
+from barusini.tabular.transformers import MissingValueImputer
 from barusini.utils import duration
 
 
