@@ -9,8 +9,8 @@ from sklearn.metrics import (
 from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.preprocessing import LabelEncoder
 
-from barusini.features import feature_engineering
-from barusini.transformers.transformer import Ensemble
+from barusini.tabular import feature_engineering
+from barusini.tabular.transformers.transformer import Ensemble
 from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
 

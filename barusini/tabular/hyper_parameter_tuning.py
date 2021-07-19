@@ -335,7 +335,12 @@ class XGBoostTrial(TreeTrial):
             "default": "model.n_estimators",
         }
     }
-    static_params = {"n_estimators": 1000, "tree_method": "hist", "seed": 42, "n_jobs": 1}
+    static_params = {
+        "n_estimators": 1000,
+        "tree_method": "hist",
+        "seed": 42,
+        "n_jobs": 1,
+    }
     default_params = {
         "min_child_weight": (LOG, (1e-2, 1e2)),
         "max_depth": (INT, (3, 12)),

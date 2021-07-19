@@ -1,13 +1,13 @@
 import pandas as pd
 
-from barusini.feature_engineering.generic_stage import subset_numeric_features
-from barusini.transformers import (
+from barusini.tabular.stages.generic_stage import subset_numeric_features
+from barusini.tabular.transformers import (
     Identity,
     MissingValueImputer,
     Pipeline,
 )
 from barusini.utils import duration
-from barusini.transformers import MeanTargetEncoder
+from barusini.tabular.transformers import MeanTargetEncoder
 
 
 def drop_uniques(X, thr=0.99):

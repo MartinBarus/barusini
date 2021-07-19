@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
-from barusini.transformers.transformer import Transformer
+from barusini.tabular.transformers.transformer import Transformer
 from barusini.utils import (
     create_single_column,
     make_dataframe,

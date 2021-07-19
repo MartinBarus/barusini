@@ -6,7 +6,10 @@ from scipy.optimize import LinearConstraint
 from tqdm import tqdm as tqdm
 
 from barusini.constants import UNIVERSAL_CV, STR_BULLET, STR_SPACE
-from barusini.model_tuning import cv_predictions, get_trial_for_model
+from barusini.tabular.hyper_parameter_tuning import (
+    cv_predictions,
+    get_trial_for_model,
+)
 from barusini.utils import deepcopy, get_maximize, get_probability
 
 
@@ -138,7 +141,7 @@ class Pipeline(Transformer):
             return self.contribs_
         contrib_fn = self.get_predict_contrib_fn()
         if contrib_fn is not None:
-            if len(set(self.used_cols)-set(X.columns)):
+            if len(set(self.used_cols) - set(X.columns)):
                 X = self.transform(X)
             X = X[self.used_cols]
             contribs = contrib_fn(X, pred_contrib=True)

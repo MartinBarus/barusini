@@ -9,7 +9,7 @@
 import pandas as pd
 
 from barusini.constants import CV, ESTIMATOR
-from barusini.feature_engineering import (
+from barusini.tabular import (
     ALLOWED_TRANSFORMERS,
     basic_preprocess,
     encode_categoricals,

@@ -8,7 +8,7 @@ from barusini.constants import (
     TERMINAL_COLS,
 )
 from barusini.model_selection import cross_val_score
-from barusini.transformers import (
+from barusini.tabular.transformers import (
     CustomLabelEncoder,
     CustomOneHotEncoder,
     LinearTextEncoder,

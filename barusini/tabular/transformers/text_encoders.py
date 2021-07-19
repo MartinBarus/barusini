@@ -2,8 +2,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
-from barusini.transformers.encoders import GenericEncoder
-from barusini.transformers.target_encoders import TargetEncoder
+from barusini.tabular.transformers.encoders import GenericEncoder
+from barusini.tabular.transformers.target_encoders import TargetEncoder
 from barusini.utils import (
     sanitize,
     update_kwargs,
