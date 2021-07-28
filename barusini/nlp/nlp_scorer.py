@@ -1,6 +1,7 @@
 import json
 import os
 from contextlib import ExitStack
+import glob
 
 import pandas as pd
 from tqdm import tqdm
@@ -23,8 +24,6 @@ class NlpScorer(torch.nn.Module):
         **kwargs,
     ):
         super(NlpScorer, self).__init__()
-        valid = (model_folder is not None) ^ (pretrained_weights is not None)
-        assert valid, "Provide either model folder or pretrained weights!"
         self.model = model_class(
             **kwargs, pretrained_weights=None, model_folder=model_folder
         )
@@ -32,12 +31,12 @@ class NlpScorer(torch.nn.Module):
         self.n_tokens = n_tokens
         self.precision = precision
         self.model_folder = model_folder
+        if model_folder is not None:
+            print("Using model folder", model_folder)
         if pretrained_weights is not None:
             state = torch.load(pretrained_weights, map_location="cpu")
             self.load_state_dict(state["state_dict"])
             print("Loaded weights", pretrained_weights)
-        if model_folder is not None:
-            print("Using model folder", model_folder)
 
     @staticmethod
     def parse_config(config_path):
@@ -52,11 +51,26 @@ class NlpScorer(torch.nn.Module):
         return NlpScorer(**config)
 
     @staticmethod
-    def from_folder(folder_path):
+    def from_folder(folder_path, best_ckpt=False, pretrained_weights=None):
         config_path = os.path.join(folder_path, "high_level_config.json")
         config = NlpScorer.parse_config(config_path)
         config["model_folder"] = folder_path
+        if best_ckpt:
+            ckpt = NlpScorer.find_best_ckpt(folder_path)
+            config["pretrained_weights"] = ckpt
+        elif pretrained_weights:
+            config["pretrained_weights"] = pretrained_weights
         return NlpScorer(**config)
+
+    @staticmethod
+    def find_best_ckpt(file):
+        path = os.path.join(file, "epoch=*.ckpt")
+        all_possible_ckpts = glob.glob(path)
+        assert len(all_possible_ckpts) > 0, f"No file matching {path} found"
+        assert (
+            len(all_possible_ckpts) < 2
+        ), f"More files matching {path} found: {all_possible_ckpts}"
+        return all_possible_ckpts[0]
 
     def save_to_folder(self, folder_path):
         self.model.save_to_folder(folder_path)

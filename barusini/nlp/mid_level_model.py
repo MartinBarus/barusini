@@ -32,6 +32,7 @@ class Model(pl.LightningModule):
         n_classes,
         weight_decay,
         pretrained_weights,
+        val_check_interval=1.0,
         net_class=NlpNet,
     ):
         super(Model, self).__init__()
@@ -53,6 +54,7 @@ class Model(pl.LightningModule):
         self.loss_fn = self.get_loss_fn()  # used for computing gradient
         self.sklearn_metric = self.get_sklearn_metric()  # used as val loss
         self.model = net_class(backbone, n_classes, pretrained_weights)
+        self.val_check_interval = val_check_interval
         self.num_train_steps = math.ceil(
             len_tr_dl / gradient_accumulation_steps
         )
@@ -197,6 +199,8 @@ class Model(pl.LightningModule):
         tqdm_dict = {
             "val_loss": val_loss,
             "val_loss_mean": val_loss_mean,
-            "step": self.current_epoch,
         }
+        if int(self.val_check_interval) == self.val_check_interval:
+            tqdm_dict["step"] = self.current_epoch
+
         self.log_all(tqdm_dict)
