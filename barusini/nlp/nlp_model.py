@@ -74,6 +74,7 @@ class NlpModel:
         pretrained_weights=None,
         model_id="",
         seed=1234,
+        val_check_interval=1.0,
     ):
         # settings that affect model's predictions
         self.backbone = backbone
@@ -97,6 +98,7 @@ class NlpModel:
             list,
             tuple,
         ], "seed has to be a single number, use nlp_ensemble instead!"
+        self.val_check_interval = val_check_interval
 
         # create hash of important settings
         self._dct_str = json.dumps(get_attributes(self))
@@ -164,6 +166,7 @@ class NlpModel:
             n_classes=self.n_classes,
             weight_decay=self.weight_decay,
             pretrained_weights=self.pretrained_weights,
+            val_check_interval=self.val_check_interval,
             net_class=NlpNet,
         )
 
@@ -219,7 +222,6 @@ class NlpModel:
             monitor="val_loss",
             verbose=False,
             mode="min",
-            every_n_val_epochs=1,
             save_top_k=1,
             save_last=True,
             save_weights_only=True,
@@ -236,6 +238,7 @@ class NlpModel:
             callbacks=[ckpt],
             precision=self.precision,
             num_sanity_val_steps=0,
+            val_check_interval=self.val_check_interval,
         )
 
     def get_oof_dict(self):
