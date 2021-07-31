@@ -2,11 +2,10 @@ import pandas as pd
 import pytest
 from sklearn.metrics import (
     accuracy_score,
-    mean_absolute_error,
-    roc_auc_score,
     log_loss,
+    mean_absolute_error,
 )
-from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 
 from barusini.tabular import feature_engineering
