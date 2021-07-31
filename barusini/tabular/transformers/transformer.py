@@ -6,7 +6,7 @@ from scipy.optimize import LinearConstraint
 from tqdm import tqdm as tqdm
 
 from barusini.constants import UNIVERSAL_CV, STR_BULLET, STR_SPACE
-from barusini.tabular.hyper_parameter_tuning import (
+from barusini.tabular.stages.hyper_parameter_tuning import (
     cv_predictions,
     get_trial_for_model,
 )

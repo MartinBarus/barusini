@@ -123,30 +123,35 @@ def model_search(
     maximize=None,
     proba=None,
     classification=None,
+    n_trials=20,
     **kwargs,
 ):
     proba, maximize, scorer, classification = get_default_settings(
         proba, maximize, scorer, classification, model
     )
-    best = model.find_hyper_params(
-        model, X_train, y_train, None, cv, scorer, maximize, proba
+    best = model.tune(
+        X_train,
+        y_train,
+        cv,
+        scorer,
+        maximize=maximize,
+        probability=proba,
+        n_trials=n_trials,
+        **kwargs,
     )
 
-    new_model = deepcopy(model)
     print("BEST PARAMS", best.params)
-    new_model.model = model.trial.get_model_class(new_model)(**best.params)
-    new_model.fit(X_train, y_train)
     if X_test is not None:
         if proba:
-            test_preds = new_model.predict_proba(X_test)
+            test_preds = model.predict_proba(X_test)
         else:
-            test_preds = new_model.predict(X_test)
+            test_preds = model.predict(X_test)
         test_score = scorer(y_test, test_preds)
         print(f"TEST SCORE FOR {scorer.__name__} SCORER is {test_score}")
     if model_path:
         print("Saving model to", model_path)
         save_object(model, model_path)
-    return new_model
+    return model
 
 
 def auto_ml(

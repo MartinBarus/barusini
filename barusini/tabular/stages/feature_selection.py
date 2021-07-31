@@ -9,6 +9,10 @@ def feature_reduction_generator(model):
     for idx in trange(len(model.transformers)):
         new_model = deepcopy(model)
         del new_model.transformers[idx]
+        if len(new_model.transformers) == 0:
+            raise ValueError(
+                "All input features eliminated, try more complex model."
+            )
         yield new_model
 
 
