@@ -1,9 +1,10 @@
+import glob
 import json
 import os
 from contextlib import ExitStack
-import glob
 
 import pandas as pd
+from scipy.special import softmax
 from tqdm import tqdm
 
 import torch
@@ -99,6 +100,10 @@ class NlpScorer(torch.nn.Module):
             multiprocessing_context="fork",
         )
         return self._predict(test_dl)
+
+    def predict_proba(self, test_file_path, num_workers=8, batch_size=16):
+        logits = self.predict(test_file_path, num_workers, batch_size)
+        return logits.apply(softmax, axis=1)
 
     def _predict(self, dl):
         cuda = torch.cuda.is_available()

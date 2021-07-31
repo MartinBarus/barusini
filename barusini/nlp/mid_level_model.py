@@ -3,16 +3,15 @@ import pickle
 from collections import OrderedDict
 
 import numpy as np
+import sklearn.metrics
+from scipy.special import softmax
 
 import pytorch_lightning as pl
 import torch
 from barusini.constants import rmse
 from barusini.nlp.low_level_model import NlpNet
-from transformers import (
-    AdamW,
-    get_cosine_schedule_with_warmup,
-    get_linear_schedule_with_warmup,
-)
+from barusini.nlp.utils import expand_classification_label
+from transformers import AdamW, get_cosine_schedule_with_warmup
 
 
 class Model(pl.LightningModule):
@@ -53,6 +52,7 @@ class Model(pl.LightningModule):
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.loss_fn = self.get_loss_fn()  # used for computing gradient
         self.sklearn_metric = self.get_sklearn_metric()  # used as val loss
+        self.n_classes = n_classes
         self.model = net_class(backbone, n_classes, pretrained_weights)
         self.val_check_interval = val_check_interval
         self.num_train_steps = math.ceil(
@@ -62,13 +62,24 @@ class Model(pl.LightningModule):
     def get_loss_fn(self):
         if self.metric.lower() in ["rmse", "mse"]:
             return torch.nn.MSELoss()
+
+        if self.metric.lower() in ["roc_auc_score", "log_loss"]:
+            return torch.nn.CrossEntropyLoss()
         raise ValueError(f"metric {self.metric} not supported")
 
     def get_sklearn_metric(self):
-        if self.metric.lower() == "rmse":
+        metric_name = self.metric.lower()
+        if metric_name == "rmse":
             return rmse
 
-        raise ValueError(f"metric {self.metric} not supported")
+        if hasattr(sklearn.metrics, metric_name):
+            return getattr(sklearn.metrics, metric_name)
+
+        err = (
+            f"metric {self.metric} is not supported, use metric from "
+            "sklearn.metrics"
+        )
+        raise ValueError(err)
 
     def forward(self, x):
         return self.model(x)
@@ -148,7 +159,10 @@ class Model(pl.LightningModule):
         target = batch["target"]
         output_dict = self.forward(input_dict)
         preds = output_dict["logits"]
-        loss = self.loss_fn(preds.view(-1), target)
+        if self.n_classes == 1:
+            loss = self.loss_fn(preds.view(-1), target)
+        else:
+            loss = self.loss_fn(preds, target.long())
         return loss, preds, target
 
     def training_step(self, batch, batcn_num):
@@ -194,6 +208,10 @@ class Model(pl.LightningModule):
             pickle.dump(out_val, handle)
 
         val_loss_mean = np.mean(out_val["val_loss"])
+        if self.n_classes > 1:
+            # turn logits into probabilities for sklearn metrics
+            out_val["preds"] = softmax(out_val["preds"], axis=1)
+            out_val["target"] = expand_classification_label(out_val["target"])
         val_loss = self.sklearn_metric(out_val["target"], out_val["preds"])
 
         tqdm_dict = {

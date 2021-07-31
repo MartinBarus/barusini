@@ -115,3 +115,6 @@ venv.bak/
 *.prof
 *.csv
 *.ipynb
+
+# test output files
+tests/test_nlp/*.json

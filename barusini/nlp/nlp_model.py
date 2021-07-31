@@ -6,11 +6,9 @@ import json
 import os
 import pickle
 from collections import OrderedDict
-from contextlib import ExitStack
 
 import numpy as np
 import pandas as pd
-import torch
 
 from barusini.nlp.data import NLPDataset
 from barusini.nlp.low_level_model import NlpNet
@@ -18,12 +16,8 @@ from barusini.nlp.mid_level_model import Model
 from barusini.nlp.utils import set_seed
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import (
-    NeptuneLogger,
-    TensorBoardLogger,
-    TestTubeLogger,
-)
-from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
+from pytorch_lightning.loggers import TensorBoardLogger
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 
 def get_data(x):
@@ -137,9 +131,14 @@ class NlpModel:
 
     def fit(self, train, val, num_workers=8, gpus=("0",), verbose=True):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        if val and type(val) is str:
-            self.val_data_path = val
-            self.val_split = os.path.basename(val)
+        param_err = "{} should be path to {} file"
+        if type(train) is not str or not len(train):
+            raise ValueError(param_err.format("train", "training"))
+        if type(val) is not str or not len(val):
+            raise ValueError(param_err.format("val", "validation"))
+
+        self.val_data_path = val
+        self.val_split = os.path.basename(val)
 
         if self.is_trained():
             if verbose:
