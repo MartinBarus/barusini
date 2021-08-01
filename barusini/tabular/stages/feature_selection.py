@@ -10,10 +10,9 @@ def feature_reduction_generator(model):
         new_model = deepcopy(model)
         del new_model.transformers[idx]
         if len(new_model.transformers) == 0:
-            raise ValueError(
-                "All input features eliminated, try more complex model."
-            )
-        yield new_model
+            print("All input features eliminated, try more complex model.")
+        else:
+            yield new_model
 
 
 @duration("Find Best Subset")

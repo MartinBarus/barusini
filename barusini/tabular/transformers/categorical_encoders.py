@@ -93,6 +93,11 @@ class GenericEncoder(Encoder):
     def output_columns(self):
         return self.target_names
 
+    def used_cols_str(self):
+        if len(self.used_cols) == 1:
+            return self.used_cols[0]
+        return str(self.used_cols)
+
 
 class BaseLabelEncoder(LabelEncoder):
     """
@@ -122,11 +127,11 @@ class CustomLabelEncoder(GenericEncoder):
         return x.values.reshape(-1)
 
     def fit_names(self):
-        self.target_names = [sanitize(f"{self.used_cols} [LE]")]
+        self.target_names = [sanitize(f"{self.used_cols_str()} [LE]")]
 
     def __str__(self):
-        if hasattr(self.encoder, "categories_"):
-            encoder_str = str(self.encoder.classes_[0])
+        if hasattr(self.encoder, "classes_"):
+            encoder_str = str(self.encoder.classes_)
         else:
             encoder_str = "Unfitted Transformer"
 
@@ -149,7 +154,7 @@ class CustomOneHotEncoder(GenericEncoder):
 
     def fit_names(self):
         self.target_names = [
-            sanitize(f"{self.used_cols} [OHE:{val}]")
+            sanitize(f"{self.used_cols_str()} [OHE:{val}]")
             for val in self.encoder.categories_[0]
         ]
 
