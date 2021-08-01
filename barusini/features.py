@@ -339,14 +339,9 @@ def feature_engineering(X, y, model_path, **kwargs):
     model = encode_categoricals(X, y, model, **kwargs)
     model = recode_categoricals(X, y, model, **kwargs)
     if model_path:
-        print("Saving model to", model_path)
         save_object(model, model_path)
-    return new_model
 
 
-def auto_ml(X, y, model_path=None, **kwargs):
-    model = feature_engineering(X, y, model_path=model_path)
-    model = model_search(X, y, model, model_path, None, model_path)
     return model
 
 
