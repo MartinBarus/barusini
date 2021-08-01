@@ -1,8 +1,9 @@
 import os
-from sklearn.model_selection import StratifiedKFold, KFold
+
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import log_loss, mean_squared_error
-import numpy as np
+from sklearn.model_selection import KFold, StratifiedKFold
 
 
 def get_terminal_size():

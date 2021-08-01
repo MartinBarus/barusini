@@ -1,13 +1,9 @@
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
-from barusini.tabular.transformers.transformer import Transformer
-from barusini.utils import (
-    create_single_column,
-    make_dataframe,
-    sanitize,
-)
 from barusini.constants import JOIN_STR
+from barusini.tabular.transformers.base_transformer import Transformer
+from barusini.utils import create_single_column, make_dataframe, sanitize
 
 INDEX_STR = "index"  # default temporary index name
 
@@ -99,6 +95,13 @@ class GenericEncoder(Encoder):
 
 
 class BaseLabelEncoder(LabelEncoder):
+    """
+    This class exists due to compatibility reasons as the base sklearn
+    LabelEncoder fit/fit_transform has a different signature fn(X) than sklearn
+    OneHotEncoder fn(X, y=None), y is passed to all encoders during fit, they
+    can choose to ignore it.
+    """
+
     def fit(self, X, *args, **kwargs):
         super().fit(X)
 

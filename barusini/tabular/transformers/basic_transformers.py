@@ -1,7 +1,7 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from barusini.tabular.transformers.transformer import Transformer
+from barusini.tabular.transformers.base_transformer import Transformer
 from barusini.utils import sanitize
 
 

@@ -6,19 +6,17 @@
 # barusini can not be copied and/or distributed without the express
 # permission of Martin Barus or Miroslav Barus
 ####################################################################
-import contextlib
 import copy
 import functools
-import os
 import pickle
 import re
 import time
+from inspect import signature
 
 import numpy as np
 import pandas as pd
 from sklearn.base import ClassifierMixin, RegressorMixin
 from tqdm import tqdm as tqdm
-from inspect import signature
 
 from barusini.constants import (
     DEFAULT_CASSIFICATION_METRIC,
@@ -231,4 +229,5 @@ def copy_signature(source_fct):
         target_fct.__signature__ = signature(source_fct)
         target_fct.__doc__ = source_fct.__doc__
         return target_fct
+
     return copy
