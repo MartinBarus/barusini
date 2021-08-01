@@ -231,9 +231,12 @@ class Trial:
                 print(attr, "mean", attr_mean, "std", attr_std)
 
         try:
+            if len(oof.shape) == 2 and oof.shape[1] == 2:
+                oof = oof[:, 1]
             score = scoring(y_train, oof)
-        except:
+        except Exception as e:
             score = float("inf")
+            print("Error occured:", e)
         print_score = score
         score = -score if maximize else score
         if print_intermediate_results:
