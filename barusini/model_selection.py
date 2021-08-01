@@ -32,7 +32,7 @@ def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=None):
         for train, test in cv.split(X, y)
     )
 
-    return np.mean(scores), model
+    return np.mean(scores)
 
 
 def cross_val_score_sequential(model, X, y, cv, scoring, proba=None):
@@ -40,7 +40,7 @@ def cross_val_score_sequential(model, X, y, cv, scoring, proba=None):
         validation(deepcopy(model), X, y, train, test, scoring, proba)
         for train, test in cv.split(X, y)
     ]
-    return np.mean(scores), model
+    return np.mean(scores)
 
 
 def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=None):
