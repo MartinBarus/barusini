@@ -90,6 +90,10 @@ def is_new_better(old, new, maximize):
     return new <= old
 
 
+def cross_val_with_pipeline(model, *args, **kwargs):
+    return cross_val_score(model, *args, **kwargs), model
+
+
 def best_alternative_model(
     alternative_pipelines,
     base_score,
@@ -109,12 +113,12 @@ def best_alternative_model(
             n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
         )
         result = parallel(
-            delayed(cross_val_score)(pipeline, X, y, **kwargs)
+            delayed(cross_val_with_pipeline)(pipeline, X, y, **kwargs)
             for pipeline in alternative_pipelines
         )
     else:
         result = [
-            cross_val_score(pipeline, X, y, **kwargs)
+            cross_val_with_pipeline(pipeline, X, y, **kwargs)
             for pipeline in alternative_pipelines
         ]
 
@@ -143,7 +147,7 @@ def generic_change(
     **kwargs,
 ):
     print(format_str("Starting stage {}".format(stage_name)))
-    base_score, _ = cross_val_score(
+    base_score = cross_val_score(
         model_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric, proba=proba,
     )
     print("BASE", base_score)
