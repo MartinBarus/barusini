@@ -1,13 +1,13 @@
-import pandas as pd
 import numpy as np
-from sklearn.model_selection import KFold
-from barusini.constants import STR_BULLET, STR_SPACE, JOIN_STR
-from barusini.tabular.transformers.encoders import Encoder
-from barusini.utils import create_single_column, deepcopy, unique_name, reshape
-
-from sklearn.pipeline import Pipeline
+import pandas as pd
 from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import KFold
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
+
+from barusini.constants import JOIN_STR, STR_BULLET, STR_SPACE
+from barusini.tabular.transformers.categorical_encoders import Encoder
+from barusini.utils import create_single_column, deepcopy, reshape, unique_name
 
 
 class BaseEncoder(Encoder):

@@ -9,7 +9,7 @@
 import pandas as pd
 
 from barusini.constants import CV, ESTIMATOR
-from barusini.tabular import (
+from barusini.tabular.stages import (
     ALLOWED_TRANSFORMERS,
     basic_preprocess,
     encode_categoricals,
@@ -18,7 +18,6 @@ from barusini.tabular import (
     recode_categoricals,
 )
 from barusini.utils import (
-    deepcopy,
     duration,
     get_default_settings,
     load_object,

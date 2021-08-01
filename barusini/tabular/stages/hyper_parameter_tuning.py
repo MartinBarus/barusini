@@ -1,13 +1,12 @@
-import copy
 from functools import partial
 
 import numpy as np
 import pandas as pd
 
 import optuna
+from barusini.utils import deepcopy
 from lightgbm import LGBMModel
 from xgboost import XGBModel
-from barusini.utils import deepcopy
 
 LOG = "log"
 LOGINT = "logint"

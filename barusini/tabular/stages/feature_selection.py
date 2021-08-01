@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from barusini.constants import CV
-from barusini.tabular.stages.generic_stage import generic_change
+from barusini.tabular.stages.base_stage import generic_change
 from barusini.utils import duration, trange
 
 

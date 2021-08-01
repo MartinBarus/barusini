@@ -1,7 +1,8 @@
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
 from sklearn.ensemble import RandomForestClassifier
+
 from barusini.tabular.transformers import (
     ConfidenceIntervals,
     CustomLabelEncoder,

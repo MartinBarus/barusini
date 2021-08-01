@@ -16,7 +16,7 @@ from barusini.tabular.transformers import (
     MeanTargetEncoder,
     Pipeline,
 )
-from barusini.tabular.transformers.transformer import Ensemble
+from barusini.tabular.transformers.ensemble import Ensemble
 from lightgbm import LGBMClassifier, LGBMRegressor
 from xgboost import XGBClassifier, XGBRegressor
 
