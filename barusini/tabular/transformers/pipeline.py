@@ -157,6 +157,7 @@ class Pipeline(Transformer):
         attributes_to_monitor=None,
         n_trials=20,
         n_jobs=4,
+        seed=None,
     ):
         if probability is None:
             probability = get_probability(score)
@@ -165,7 +166,7 @@ class Pipeline(Transformer):
             maximize = get_maximize(score)
 
         if self.trial is None:
-            self.trial = get_trial_for_model(self.model)
+            self.trial = get_trial_for_model(self.model, seed=seed)
 
         if params is None:
             params = self.trial.default_params

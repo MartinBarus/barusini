@@ -149,8 +149,13 @@ class Trial:
     attributes_to_monitor = {}
     additional_fit_params = {}
 
-    def __init__(self):
-        self.study = optuna.create_study()
+    def __init__(self, seed=None):
+        self.seed = seed
+        if seed is not None:
+            sampler = optuna.samplers.TPESampler(seed=seed)
+        else:
+            sampler = None
+        self.study = optuna.create_study(sampler=sampler)
         self.maximize = None
 
     @staticmethod
@@ -373,11 +378,11 @@ class LightGBMTrial(TreeTrial):
     }
 
 
-def get_trial_for_model(model, **kwargs):
+def get_trial_for_model(model, seed=None):
     if isinstance(model, LGBMModel):
-        return LightGBMTrial(**kwargs)
+        return LightGBMTrial(seed=seed)
 
     if isinstance(model, XGBModel):
-        return XGBoostTrial(**kwargs)
+        return XGBoostTrial(seed=seed)
 
-    return Trial(**kwargs)
+    return Trial(seed=seed)
