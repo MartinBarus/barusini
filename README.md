@@ -10,7 +10,7 @@ There are two separate parts of the library:
 
 `barusini.tabular `implements automated ML pipeline of feature engineering, 
 model hyper-parameter tuning and model ensembling. This automated pipeline 
-consits of multiple steps, each of them can be tweaked. 
+consists of multiple steps, each of them can be tweaked. 
 
 ### Automated model building pipeline
 Given user provides an estimator (f.e. XGBoostClassifier), scorer (f.e. logloss)
@@ -82,7 +82,7 @@ This is the list of the available transformers:
 Model is an instance of ML algorithm that has some hyper-parameters (settings) and can be fitted
 and later be used for predictions. This library does not implement any models/algorithms, it uses
 models from other libraries like `sklearn`, `lightgbm` or `xgboost`, provided they are compatible with
-`sklearn` api (they implement `fit`/`transform`/`fit_transform`).
+`sklearn` API (they implement `fit`/`transform`/`fit_transform`).
 
 #### Pipeline
 Pipeline is an important concept missing in some libraries, it allows us to
