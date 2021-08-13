@@ -10,31 +10,16 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 
-from barusini.nlp.data import NLPDataset
-from barusini.nlp.low_level_model import NlpNet
-from barusini.nlp.mid_level_model import Model
-from barusini.nlp.utils import set_seed
+from barusini.nn.generic.mid_level_model import Model
+from barusini.nn.generic.utils import set_seed, get_data
+from barusini.nn.generic.loading import Serializable
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 
-def get_data(x):
-    if type(x) is str:
-        return pd.read_csv(x)
-    return x
-
-
-def is_hashable(x):
-    try:
-        hash(x)
-        return True
-    except:
-        return False
-
-
-def get_attributes(self):
+def get_attributes(self, **kwargs):
     attrs = [
         a
         for a in sorted(dir(self))
@@ -44,17 +29,23 @@ def get_attributes(self):
     dct = OrderedDict()
     for attr in attrs:
         dct[attr] = getattr(self, attr)
+
+    for key, val in kwargs.items():
+        dct[key] = val
+
     return dct
 
 
-class NlpModel:
+class HighLevelModel(Serializable):
+    model_class = None
+    dataset_class = None
+
     def __init__(
         self,
         n_classes,
         metric,
         input_cols,
         label,
-        n_tokens=128,
         backbone="bert-base-uncased",
         batch_size=16,
         artifact_path="barusini_nlp/",
@@ -65,10 +56,10 @@ class NlpModel:
         scheduler={"method": "cosine", "warmup_epochs": 1},
         max_epochs=10,
         precision=16,
-        pretrained_weights=None,
         model_id="",
         seed=1234,
         val_check_interval=1.0,
+        **kwargs,
     ):
         # settings that affect model's predictions
         self.backbone = backbone
@@ -76,7 +67,6 @@ class NlpModel:
         self.metric = metric
         self.input_cols = input_cols
         self.label = label
-        self.n_tokens = n_tokens
         self.batch_size = batch_size
         self.artifact_path = artifact_path
         self.lr = lr
@@ -86,7 +76,6 @@ class NlpModel:
         self.max_epochs = max_epochs
         self.precision = precision
         self.weight_decay = weight_decay
-        self.pretrained_weights = pretrained_weights
         self.seed = seed
         assert type(seed) not in [
             list,
@@ -95,7 +84,7 @@ class NlpModel:
         self.val_check_interval = val_check_interval
 
         # create hash of important settings
-        self._dct_str = json.dumps(get_attributes(self))
+        self._dct_str = json.dumps(get_attributes(self, **kwargs))
         self._hash = hashlib.md5(self._dct_str.encode("utf-8")).digest()
         self._hash = base64.b64encode(self._hash).decode("utf-8")
         self._hash = self._hash.replace("/", "@")
@@ -114,23 +103,20 @@ class NlpModel:
         self.val_data_path = None
         self.val_split = None
 
-    @staticmethod
-    def from_config(config_path):
-        config = NlpModel.parse_config(config_path)
-        return NlpModel(**config)
+    def checkpoint_folder(self):
+        return self.ckpt_save_path.format(val=self.val_split)
 
-    @staticmethod
-    def parse_config(config_path):
-        with open(config_path, "r") as file:
-            config = json.load(file)
-            config["model_id"] = os.path.basename(config_path).split(".")[0]
-            return config
+    def config_file(self):
+        return os.path.join(self.checkpoint_folder(), "high_level_config.json")
+
+    def status_file(self):
+        path = self.ckpt_save_path.format(val=self.val_split)
+        return os.path.join(path, "status.txt")
 
     def is_trained(self):
-        return os.path.exists(self.ckpt_save_path.format(val=self.val_split))
+        return os.path.exists(self.status_file())
 
     def fit(self, train, val, num_workers=8, gpus=("0",), verbose=True):
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
         param_err = "{} should be path to {} file"
         if type(train) is not str or not len(train):
             raise ValueError(param_err.format("train", "training"))
@@ -147,8 +133,38 @@ class NlpModel:
 
         exp_path = self.experiment_path.format(val=self.val_split)
         os.makedirs(exp_path, exist_ok=True)
+        ckpt_conf = self.config_file()
+        os.makedirs(os.path.dirname(ckpt_conf), exist_ok=True)
+        with open(ckpt_conf, "w") as file:
+            file.write(self._dct_str)
+
         set_seed(self.seed)
-        tr_dl, val_dl = self.get_data(train, val, num_workers)
+        train = get_data(train)
+        val = get_data(val)
+        if val is None:
+            val = train
+
+        tr_ds = self.dataset_class.from_config(config_path=ckpt_conf, df=train)
+        val_ds = self.dataset_class.from_config(config_path=ckpt_conf, df=val)
+
+        tr_dl = DataLoader(
+            dataset=tr_ds,
+            batch_size=self.batch_size,
+            sampler=RandomSampler(tr_ds),
+            num_workers=num_workers,
+            pin_memory=False,
+            multiprocessing_context="fork",
+        )
+        print("ds len", len(tr_ds))
+
+        val_dl = DataLoader(
+            dataset=val_ds,
+            batch_size=self.batch_size,
+            sampler=SequentialSampler(val_ds),
+            num_workers=num_workers,
+            pin_memory=False,
+            multiprocessing_context="fork",
+        )
         trainer = self.get_trainer(gpus)
         model = Model(
             lr=self.lr,
@@ -161,55 +177,18 @@ class NlpModel:
             batch_size=self.batch_size,
             model_path=self.oof_preds_file.format(val=self.val_split),
             experiment_name=self.experiment_name,
-            backbone=self.backbone,
             n_classes=self.n_classes,
             weight_decay=self.weight_decay,
-            pretrained_weights=self.pretrained_weights,
             val_check_interval=self.val_check_interval,
-            net_class=NlpNet,
+            model=self.model_class.from_config(config_path=ckpt_conf),
         )
 
         trainer.fit(model, tr_dl, val_dl)
         self.remove_duplicated_checkpoint()
-        ckpt_path = self.ckpt_save_path.format(val=self.val_split)
-        model.model.save_to_folder(ckpt_path)
-        ckpt_conf = os.path.join(ckpt_path, "high_level_config.json")
-        with open(ckpt_conf, "w") as file:
-            file.write(self._dct_str)
-
-    def get_data(self, train, val, num_workers):
-        train = get_data(train)
-        val = get_data(val)
-        if val is None:
-            val = train
-
-        tr_ds = NLPDataset(
-            train, self.backbone, self.input_cols, self.label, self.n_tokens
-        )
-
-        tr_dl = DataLoader(
-            dataset=tr_ds,
-            batch_size=self.batch_size,
-            sampler=RandomSampler(tr_ds),
-            num_workers=num_workers,
-            pin_memory=False,
-            multiprocessing_context="fork",
-        )
-        print("ds len", len(tr_ds))
-
-        val_ds = NLPDataset(
-            val, self.backbone, self.input_cols, self.label, self.n_tokens
-        )
-
-        val_dl = DataLoader(
-            dataset=val_ds,
-            batch_size=self.batch_size,
-            sampler=SequentialSampler(val_ds),
-            num_workers=num_workers,
-            pin_memory=False,
-            multiprocessing_context="fork",
-        )
-        return tr_dl, val_dl
+        model.model.to_folder(self.checkpoint_folder())
+        tr_ds.to_folder(self.checkpoint_folder())
+        with open(self.status_file(), "w") as file:
+            file.write("Done.")
 
     def get_trainer(self, gpus):
         logger_path = self.logger_path.format(val=self.val_split)
@@ -256,12 +235,11 @@ class NlpModel:
 
     def remove_duplicated_checkpoint(self):
         ckpt_save_path = self.ckpt_save_path.format(val=self.val_split)
-        checkpoints = glob.glob(ckpt_save_path + "*")
+        checkpoints = glob.glob(ckpt_save_path + "*.ckpt")
         last_checkpoint = [x for x in checkpoints if "last" in x]
         best_checkpoint = [x for x in checkpoints if "last" not in x]
-
-        assert len(last_checkpoint) == 1
-        assert len(best_checkpoint) == 1
+        assert len(last_checkpoint) == 1, len(last_checkpoint)
+        assert len(best_checkpoint) == 1, len(best_checkpoint)
         last_checkpoint = last_checkpoint[0]
         best_checkpoint = best_checkpoint[0]
         if filecmp.cmp(last_checkpoint, best_checkpoint):

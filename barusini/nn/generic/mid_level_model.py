@@ -9,8 +9,7 @@ from scipy.special import softmax
 import pytorch_lightning as pl
 import torch
 from barusini.constants import rmse
-from barusini.nlp.low_level_model import NlpNet
-from barusini.nlp.utils import expand_classification_label
+from barusini.nn.generic.utils import expand_classification_label
 from transformers import AdamW, get_cosine_schedule_with_warmup
 
 
@@ -27,12 +26,10 @@ class Model(pl.LightningModule):
         batch_size,
         model_path,
         experiment_name,
-        backbone,
         n_classes,
         weight_decay,
-        pretrained_weights,
         val_check_interval=1.0,
-        net_class=NlpNet,
+        model=None,
     ):
         super(Model, self).__init__()
 
@@ -53,7 +50,7 @@ class Model(pl.LightningModule):
         self.loss_fn = self.get_loss_fn()  # used for computing gradient
         self.sklearn_metric = self.get_sklearn_metric()  # used as val loss
         self.n_classes = n_classes
-        self.model = net_class(backbone, n_classes, pretrained_weights)
+        self.model = model
         self.val_check_interval = val_check_interval
         self.num_train_steps = math.ceil(
             len_tr_dl / gradient_accumulation_steps
