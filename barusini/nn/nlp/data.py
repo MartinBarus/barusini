@@ -1,25 +1,26 @@
 import torch
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
+from barusini.nn.generic.loading import Serializable
 
 
-class NLPDataset(Dataset):
-    def __init__(self, df, model_name, input_cols, label_col, max_length):
+class NLPDataset(Dataset, Serializable):
+    def __init__(self, df, backbone, input_cols, label, n_tokens, **kwargs):
 
         self.df = df
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(backbone)
         text_values = df[input_cols].fillna("").sum(axis=1).values
         self.tokenized_texts = self.tokenizer(
             text_values.tolist(),
             add_special_tokens=True,
             padding=True,
-            max_length=max_length,
+            max_length=n_tokens,
             truncation=True,
             return_tensors="pt",
         )
         self.text = text_values
         self.eps = 1e-6
-        self.labels = label_col
+        self.labels = label
         if self.labels is not None:
             self.labels = self.df[self.labels].values
 
@@ -41,3 +42,11 @@ class NLPDataset(Dataset):
 
     def __len__(self):
         return self.df.shape[0]
+
+    def to_folder(self, folder_path=None):
+        self.tokenizer.save_pretrained(folder_path)
+
+    @classmethod
+    def from_folder(cls, folder_path=None, **overrides):
+        config_path = Serializable.get_config_path(folder_path)
+        return cls.from_config(config_path, backbone=folder_path, **overrides)

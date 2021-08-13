@@ -2,12 +2,15 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from barusini.nlp.nlp_model import NlpModel
+from barusini.nn.generic.high_level_model import HighLevelModel
 from barusini.utils import copy_signature
+from barusini.nn.generic.loading import Serializable
 
 
-class NlpEnsemble:
-    @copy_signature(NlpModel.__init__)
+class Ensemble(Serializable):
+    high_level_model_class = HighLevelModel
+
+    @copy_signature(HighLevelModel.__init__)
     def __init__(self, *args, seed=(1234,), **kwargs):
         self.model_args = args
         self.model_kwargs = kwargs
@@ -17,12 +20,7 @@ class NlpEnsemble:
         else:
             self.seeds = seed
 
-    @staticmethod
-    def from_config(config_path):
-        config = NlpModel.parse_config(config_path)
-        return NlpEnsemble(**config)
-
-    @copy_signature(NlpModel.fit)
+    @copy_signature(HighLevelModel.fit)
     def fit(self, train, val, gpus=("0",), **kwargs):
         assert type(train) in [list, tuple], "train must be list or tuple"
         assert type(val) in [list, tuple], "val must be list or tuple"
@@ -41,7 +39,9 @@ class NlpEnsemble:
         self.models = []
         for seed in self.seeds:
             act_models = [
-                NlpModel(*self.model_args, seed=seed, **self.model_kwargs)
+                self.high_level_model_class(
+                    *self.model_args, seed=seed, **self.model_kwargs
+                )
                 for _ in range(len(train))
             ]
             self.models.extend(act_models)
@@ -64,7 +64,9 @@ class NlpEnsemble:
         self.models = []
         for seed in self.seeds:
             for i in range(len(train)):
-                m = NlpModel(*self.model_args, seed=seed, **self.model_kwargs)
+                m = self.high_level_model_class(
+                    *self.model_args, seed=seed, **self.model_kwargs
+                )
                 m.fit(train[i], val[i], *args, gpus=gpus[0], **kwargs)
                 self.models.append(m)
 

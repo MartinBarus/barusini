@@ -1,7 +1,9 @@
+import json
 import os
 import random
 
 import numpy as np
+import pandas as pd
 
 import torch
 
@@ -25,3 +27,16 @@ def expand_classification_label(label, max_size=None):
     new_label = np.zeros((label.size, max_size + 1))
     new_label[np.arange(label.size), label] = 1
     return new_label
+
+
+def get_data(x):
+    if type(x) is str:
+        return pd.read_csv(x)
+    return x
+
+
+def parse_config(config_path, **overrides):
+    with open(config_path, "r") as file:
+        config = json.load(file)
+        config["model_id"] = os.path.basename(config_path).split(".")[0]
+        return {**config, **overrides}
