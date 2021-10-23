@@ -44,7 +44,6 @@ class HighLevelModel(Serializable):
         self,
         n_classes,
         metric,
-        input_cols,
         label,
         backbone="bert-base-uncased",
         batch_size=16,
@@ -59,13 +58,13 @@ class HighLevelModel(Serializable):
         model_id="",
         seed=1234,
         val_check_interval=1.0,
+        log_every_n_steps=50,
         **kwargs,
     ):
         # settings that affect model's predictions
         self.backbone = backbone
         self.n_classes = n_classes
         self.metric = metric
-        self.input_cols = input_cols
         self.label = label
         self.batch_size = batch_size
         self.artifact_path = artifact_path
@@ -82,6 +81,7 @@ class HighLevelModel(Serializable):
             tuple,
         ], "seed has to be a single number, use nlp_ensemble instead!"
         self.val_check_interval = val_check_interval
+        self.log_every_n_steps = log_every_n_steps
 
         # create hash of important settings
         self._dct_str = json.dumps(get_attributes(self, **kwargs))
@@ -217,6 +217,7 @@ class HighLevelModel(Serializable):
             precision=self.precision,
             num_sanity_val_steps=0,
             val_check_interval=self.val_check_interval,
+            log_every_n_steps=self.log_every_n_steps,
         )
 
     def get_oof_dict(self):
