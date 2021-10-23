@@ -1,6 +1,7 @@
 from contextlib import ExitStack
 
 import pandas as pd
+from scipy.special import expit as sigmoid
 from scipy.special import softmax
 from tqdm import tqdm
 
@@ -24,9 +25,7 @@ class Scorer(torch.nn.Module, Serializable):
         )
         self.precision = precision
 
-    def predict(
-        self, test_file_path, num_workers=8, batch_size=16, precision=None
-    ):
+    def predict(self, test_file_path, num_workers=8, batch_size=16, precision=None):
         test = get_data(test_file_path)
         test_ds = self.dataset_class.from_folder(
             folder_path=self.model_folder, df=test,
@@ -48,6 +47,8 @@ class Scorer(torch.nn.Module, Serializable):
         logits = self.predict(
             test_file_path, num_workers, batch_size, precision=precision
         )
+        if len(logits.shape) == 1:
+            return sigmoid(logits)
         return logits.apply(softmax, axis=1)
 
     def _predict(self, dl, precision=None):
@@ -71,8 +72,11 @@ class Scorer(torch.nn.Module, Serializable):
             for batch_idx, inpt in tqdm(enumerate(dl), total=len(dl)):
                 input_dct = inpt["input"]
                 if cuda:
-                    for key in input_dct:
-                        input_dct[key] = input_dct[key].cuda()
+                    if type(input_dct) is dict:
+                        for key in input_dct:
+                            input_dct[key] = input_dct[key].cuda()
+                    else:
+                        input_dct = input_dct.cuda()
                 preds = self.model(input_dct)["logits"]
                 if cuda:
                     all_preds.extend(preds.cpu().tolist())
@@ -91,6 +95,4 @@ class Scorer(torch.nn.Module, Serializable):
     @classmethod
     def from_folder(cls, folder_path=None, **overrides):  # load fitted
         config_path = Serializable.get_config_path(folder_path)
-        return cls.from_config(
-            config_path, model_folder=folder_path, **overrides
-        )
+        return cls.from_config(config_path, model_folder=folder_path, **overrides)

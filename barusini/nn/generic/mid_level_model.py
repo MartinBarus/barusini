@@ -4,12 +4,14 @@ from collections import OrderedDict
 
 import numpy as np
 import sklearn.metrics
+from scipy.special import expit as sigmoid
 from scipy.special import softmax
 
 import pytorch_lightning as pl
 import torch
 from barusini.constants import rmse
 from barusini.nn.generic.utils import expand_classification_label
+from torch.optim import Adam
 from transformers import AdamW, get_cosine_schedule_with_warmup
 
 
@@ -47,20 +49,22 @@ class Model(pl.LightningModule):
         self.model_path = model_path
         self.experiment_name = experiment_name
         self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.n_classes = n_classes
         self.loss_fn = self.get_loss_fn()  # used for computing gradient
         self.sklearn_metric = self.get_sklearn_metric()  # used as val loss
-        self.n_classes = n_classes
         self.model = model
         self.val_check_interval = val_check_interval
-        self.num_train_steps = math.ceil(
-            len_tr_dl / gradient_accumulation_steps
-        )
+        self.num_train_steps = math.ceil(len_tr_dl / gradient_accumulation_steps)
 
     def get_loss_fn(self):
         if self.metric.lower() in ["rmse", "mse"]:
             return torch.nn.MSELoss()
 
         if self.metric.lower() in ["roc_auc_score", "log_loss"]:
+            if self.n_classes < 3:
+                # allows to implement label smoothing, link is sigmoid
+                return torch.nn.BCEWithLogitsLoss()
+            # link is softmax
             return torch.nn.CrossEntropyLoss()
         raise ValueError(f"metric {self.metric} not supported")
 
@@ -73,8 +77,7 @@ class Model(pl.LightningModule):
             return getattr(sklearn.metrics, metric_name)
 
         err = (
-            f"metric {self.metric} is not supported, use metric from "
-            "sklearn.metrics"
+            f"metric {self.metric} is not supported, use metric from " "sklearn.metrics"
         )
         raise ValueError(err)
 
@@ -83,9 +86,7 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
         parameters = list(self.model.parameters())
-        trainable_parameters = list(
-            filter(lambda p: p.requires_grad, parameters)
-        )
+        trainable_parameters = list(filter(lambda p: p.requires_grad, parameters))
         print("trainable_parameters", len(trainable_parameters))
 
         if self.optimizer_str == "adamw":
@@ -94,7 +95,13 @@ class Model(pl.LightningModule):
                 lr=self.lr,
                 weight_decay=self.weight_decay,
             )
-            print("USING MY ADAM")
+        elif self.optimizer_str == "adam":
+            self.optimizer = Adam(
+                [{"params": trainable_parameters}],
+                lr=self.lr,
+                weight_decay=self.weight_decay,
+            )
+            print("USING MY ADAM", self.weight_decay, self.lr)
         elif self.optimizer_str == "sgd":
             self.optimizer = torch.optim.SGD(
                 [{"params": trainable_parameters}],
@@ -151,24 +158,27 @@ class Model(pl.LightningModule):
             self.scheduler = None
             return [self.optimizer]
 
+    def loss(self, preds, target):
+        if self.n_classes == 1:
+            loss = self.loss_fn(preds.view(-1), target)
+        elif self.n_classes == 2:
+            # potential label smoothing
+            loss = self.loss_fn(preds, target)
+        else:
+            loss = self.loss_fn(preds, target.long())
+        return loss
+
     def get_loss(self, batch):
         input_dict = batch["input"]
         target = batch["target"]
         output_dict = self.forward(input_dict)
         preds = output_dict["logits"]
-        if self.n_classes == 1:
-            loss = self.loss_fn(preds.view(-1), target)
-        else:
-            loss = self.loss_fn(preds, target.long())
+        loss = self.loss(preds, target)
         return loss, preds, target
 
-    def training_step(self, batch, batcn_num):
+    def training_step(self, batch, batch_num):
         loss, preds, target = self.get_loss(batch)
-        step = (
-            self.global_step
-            * self.batch_size
-            * self.gradient_accumulation_steps
-        )
+        step = self.global_step * self.batch_size * self.gradient_accumulation_steps
         tb_dict = {"train_loss": loss, "step": step}
 
         for i, param_group in enumerate(self.optimizer.param_groups):
@@ -196,10 +206,10 @@ class Model(pl.LightningModule):
         for key in outputs[0].keys():
             out_val[key] = torch.cat([o[key] for o in outputs])
 
+        val_loss = self.loss(out_val["preds"], out_val["target"])
+
         for key in out_val.keys():
-            out_val[key] = (
-                out_val[key].detach().cpu().numpy().astype(np.float32)
-            )
+            out_val[key] = out_val[key].detach().cpu().numpy().astype(np.float32)
 
         with open(self.model_path, "wb") as handle:
             pickle.dump(out_val, handle)
@@ -207,11 +217,17 @@ class Model(pl.LightningModule):
         val_loss_mean = np.mean(out_val["val_loss"])
         if self.n_classes > 1:
             # turn logits into probabilities for sklearn metrics
-            out_val["preds"] = softmax(out_val["preds"], axis=1)
-            out_val["target"] = expand_classification_label(out_val["target"])
-        val_loss = self.sklearn_metric(out_val["target"], out_val["preds"])
+            out_val["target"] = out_val["target"].round().astype(int)
+            if self.n_classes == 2:
+                out_val["preds"] = sigmoid(out_val["preds"])
+            else:
+                out_val["preds"] = softmax(out_val["preds"], axis=1)
+                out_val["target"] = expand_classification_label(out_val["target"])
+
+        val_metric = self.sklearn_metric(out_val["target"], out_val["preds"])
 
         tqdm_dict = {
+            "val_metric": val_metric,
             "val_loss": val_loss,
             "val_loss_mean": val_loss_mean,
         }

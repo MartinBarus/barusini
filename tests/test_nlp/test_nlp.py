@@ -5,8 +5,7 @@ import pandas as pd
 import pytest
 from sklearn.metrics import roc_auc_score
 
-from barusini.nlp.nlp_model import NlpModel
-from barusini.nlp.nlp_scorer import NlpScorer
+from barusini.nn.nlp.nlp_model import NlpModel, NlpScorer
 from datasets import load_dataset
 
 
@@ -39,6 +38,7 @@ def nlp_config():
     config_path = "cfg.json"
     config = {
         "n_classes": 2,
+        "n_tokens": 256,
         "backbone": "distilbert-base-uncased",
         "batch_size": 16,
         "metric": "roc_auc_score",
