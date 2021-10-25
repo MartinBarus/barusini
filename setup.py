@@ -31,5 +31,6 @@ setuptools.setup(
     ],
     install_requires=requirements,
     packages=setuptools.find_packages(include=["barusini"]),
+    package_data={"barusini": ["*/*.py", "*/*/*.py"]},
     python_requires=">=3.6",
 )
