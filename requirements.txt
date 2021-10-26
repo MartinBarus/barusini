@@ -9,3 +9,4 @@ optuna>=2.1.0
 xgboost>=1.4.2
 joblib>=0.14.1
 scikit_learn>=0.24.2
+transformers>=4.6.0
