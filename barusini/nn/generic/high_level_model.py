@@ -10,13 +10,14 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 
-from barusini.nn.generic.mid_level_model import Model
-from barusini.nn.generic.utils import set_seed, get_data
+from barusini.constants import TEST_MODE, TRAIN_MODE
 from barusini.nn.generic.loading import Serializable
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from barusini.nn.generic.mid_level_model import Model
+from barusini.nn.generic.utils import get_data, set_seed
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 
 def get_attributes(self, **kwargs):
@@ -45,9 +46,9 @@ class HighLevelModel(Serializable):
         n_classes,
         metric,
         label,
-        backbone="bert-base-uncased",
+        backbone="timm_or_transformers_backbone",
         batch_size=16,
-        artifact_path="barusini_nlp/",
+        artifact_path="barusini_nn/",
         lr=1e-4,
         weight_decay=1e-4,
         gradient_accumulation_steps=1,
@@ -144,8 +145,12 @@ class HighLevelModel(Serializable):
         if val is None:
             val = train
 
-        tr_ds = self.dataset_class.from_config(config_path=ckpt_conf, df=train)
-        val_ds = self.dataset_class.from_config(config_path=ckpt_conf, df=val)
+        tr_ds = self.dataset_class.from_config(
+            config_path=ckpt_conf, df=train, mode=TRAIN_MODE
+        )
+        val_ds = self.dataset_class.from_config(
+            config_path=ckpt_conf, df=val, mode=TEST_MODE
+        )
 
         tr_dl = DataLoader(
             dataset=tr_ds,

@@ -35,7 +35,7 @@ def nlp_data():
 
 @pytest.fixture(scope="session")
 def nlp_config():
-    config_path = "cfg.json"
+    config_path = "cfg_nlp.json"
     config = {
         "n_classes": 2,
         "n_tokens": 256,

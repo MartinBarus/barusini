@@ -100,3 +100,6 @@ def rmse(y_true, y_pred, sample_weight=None):
 
 DEFAULT_CASSIFICATION_METRIC = log_loss
 DEFAULT_REGRESSION_METRIC = rmse
+
+TRAIN_MODE = "train"
+TEST_MODE = "test"

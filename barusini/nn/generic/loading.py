@@ -19,7 +19,7 @@ class Serializable:
         return cls(**config)
 
     def to_folder(self, folder_path=None):
-        raise ValueError("Not Implemented")
+        pass
 
     @staticmethod
     def find_best_ckpt(file):
