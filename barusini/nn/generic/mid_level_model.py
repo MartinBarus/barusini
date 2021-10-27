@@ -76,9 +76,7 @@ class Model(pl.LightningModule):
         if hasattr(sklearn.metrics, metric_name):
             return getattr(sklearn.metrics, metric_name)
 
-        err = (
-            f"metric {self.metric} is not supported, use metric from " "sklearn.metrics"
-        )
+        err = f"metric {self.metric} is not supported, use metric from sklearn.metrics"
         raise ValueError(err)
 
     def forward(self, x):
@@ -159,11 +157,8 @@ class Model(pl.LightningModule):
             return [self.optimizer]
 
     def loss(self, preds, target):
-        if self.n_classes == 1:
+        if self.n_classes < 3:
             loss = self.loss_fn(preds.view(-1), target)
-        elif self.n_classes == 2:
-            # potential label smoothing
-            loss = self.loss_fn(preds, target)
         else:
             loss = self.loss_fn(preds, target.long())
         return loss

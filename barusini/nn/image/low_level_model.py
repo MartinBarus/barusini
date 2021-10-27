@@ -1,14 +1,10 @@
-from torch import nn
 import os
 
-from barusini.nn.generic.loading import Serializable
-
-
-import torch
-import pandas as pd
-import numpy as np
-
 import timm
+import torch
+from barusini.nn.generic.loading import Serializable
+from barusini.nn.generic.utils import get_real_n_classes
+from torch import nn
 
 
 class ImageNet(nn.Module, Serializable):
@@ -24,7 +20,7 @@ class ImageNet(nn.Module, Serializable):
         self.net = timm.create_model(
             model_name=backbone,
             pretrained=pretrained_weights,
-            num_classes=n_classes,
+            num_classes=get_real_n_classes(n_classes),
             drop_rate=0,
             in_chans=in_channels,
         )

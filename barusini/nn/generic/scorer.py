@@ -50,6 +50,8 @@ class Scorer(torch.nn.Module, Serializable):
         )
         if len(logits.shape) == 1:
             return sigmoid(logits)
+        if logits.shape[1] == 1:
+            return logits.apply(sigmoid, axis=1)
         return logits.apply(softmax, axis=1)
 
     def _predict(self, dl, precision=None):

@@ -1,25 +1,22 @@
 import json
 import os
+import shutil
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pytest
 from sklearn.metrics import roc_auc_score
-
-from barusini.nn.image.image_model import ImageModel, ImageScorer
-from datasets import load_dataset
-
-from torchvision import datasets
-import os
-import numpy as np
+from tests.test_nn.utils import run_nn_test
 from tqdm import tqdm
 
-import pandas as pd
-import matplotlib.pyplot as plt
-import shutil
+from barusini.constants import rmse
+from barusini.nn.image.image_model import ImageModel, ImageScorer
+from torchvision import datasets
 
 
 def read_fl(fl):
-    with open(fl, 'rb') as file:
+    with open(fl, "rb") as file:
         return file.read()
 
 
@@ -31,8 +28,12 @@ def get_mnist_data(root, N=1200):
     train_path = os.path.join(root, f"train_{N}.csv")
     image_dir = os.path.join(root, f"images")
 
-    if os.path.exists(val_path) and os.path.exists(train_path) and os.path.exists(
-            image_dir) and len(os.listdir(image_dir)) >= N:
+    if (
+        os.path.exists(val_path)
+        and os.path.exists(train_path)
+        and os.path.exists(image_dir)
+        and len(os.listdir(image_dir)) >= N
+    ):
         print("Mnist Dataset Already exists")
         return train_path, val_path
 
@@ -56,6 +57,7 @@ def get_mnist_data(root, N=1200):
     # Create train and validation dataframes
     paths = [f"{i}_{labels[i]}.jpg" for i in range(len(labels))]
     df = pd.DataFrame({"path": paths[:N], "label": labels[:N]})
+    df["label2"] = (df["label"] > 4).astype(int)
     val_start = int(N * 0.8)
 
     train_df = df.iloc[:val_start]
@@ -77,7 +79,8 @@ def get_mnist_data(root, N=1200):
 
 @pytest.fixture(scope="session")
 def mnist():
-    return get_mnist_data("image_data")
+    train_path, val_path = get_mnist_data("image_data")
+    return train_path, val_path, val_path  # test is same as validation
 
 
 @pytest.fixture(scope="session")
@@ -105,20 +108,34 @@ def image_config():
     return config_path
 
 
-def test_image(mnist, image_config):
-    train_path, val_path = mnist
+def run_image_test(mnist, config, label_col, proba, **config_overrides):
+    return run_nn_test(
+        mnist, ImageModel, ImageScorer, config, label_col, proba, **config_overrides
+    )
 
-    # Create NLP Model object (used for training) and fit it
-    model = ImageModel.from_config(image_config)
-    model.fit(train_path, val_path, gpus=None)  # use gpus=[0] to use GPU 0
 
-    # Create NLP Scorer (used for predicting) from NLP Model checkpoint folder
-    model_folder = model.ckpt_save_path.format(val=os.path.basename(val_path))
-    scorer = ImageScorer.from_folder(model_folder)
-
-    # Load test data, make predictions, compute AUC
-    test = pd.read_csv(val_path)
-    preds = scorer.predict_proba(test)
-    label = test["label"]
-    auc = roc_auc_score(label, preds.values, multi_class='ovo')
+def test_image_multiclass(mnist, image_config):
+    preds, label = run_image_test(mnist, image_config, label_col="label", proba=True)
+    auc = roc_auc_score(label, preds.values, multi_class="ovo")
     assert auc > 0.81
+
+
+def test_image_binary(mnist, image_config):
+    preds, label = run_image_test(
+        mnist,
+        image_config,
+        label_col="label2",
+        proba=True,
+        n_classes=2,
+        label_smoothing=0.01,
+    )
+    auc = roc_auc_score(label, preds.values)
+    assert auc > 0.81
+
+
+def test_image_regression(mnist, image_config):
+    preds, label = run_image_test(
+        mnist, image_config, label_col="label", proba=False, n_classes=1, metric="rmse"
+    )
+    score = rmse(preds, label)
+    assert score < 2

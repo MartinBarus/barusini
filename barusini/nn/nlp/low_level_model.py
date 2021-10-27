@@ -1,11 +1,8 @@
 import torch
-from torch import nn
-from transformers import (
-    AutoConfig,
-    AutoModelForSequenceClassification,
-)
-
 from barusini.nn.generic.loading import Serializable
+from barusini.nn.generic.utils import get_real_n_classes
+from torch import nn
+from transformers import AutoConfig, AutoModelForSequenceClassification
 
 
 class NlpNet(nn.Module, Serializable):
@@ -29,9 +26,9 @@ class NlpNet(nn.Module, Serializable):
             )
             print("Model loaded from", model_folder)
         else:
-            self.n_classes = n_classes
+            self.n_classes = get_real_n_classes(n_classes)
             self.model_config = AutoConfig.from_pretrained(backbone)
-            self.model_config.num_labels = n_classes
+            self.model_config.num_labels = self.n_classes
             self.backbone = AutoModelForSequenceClassification.from_pretrained(
                 self.backbone_name, config=self.model_config
             )

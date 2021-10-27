@@ -35,6 +35,12 @@ def get_data(x):
     return x
 
 
+def get_real_n_classes(x):
+    if x == 2:
+        return 1  # Binary classification will only return probability of class 1
+    return x
+
+
 def parse_config(config_path, **overrides):
     with open(config_path, "r") as file:
         config = json.load(file)
