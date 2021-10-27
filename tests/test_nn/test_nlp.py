@@ -1,10 +1,11 @@
 import json
 import os
 
-import pandas as pd
 import pytest
 from sklearn.metrics import roc_auc_score
+from tests.test_nn.utils import run_nn_test
 
+from barusini.constants import rmse
 from barusini.nn.nlp.nlp_model import NlpModel, NlpScorer
 from datasets import load_dataset
 
@@ -35,7 +36,7 @@ def nlp_data():
 
 @pytest.fixture(scope="session")
 def nlp_config():
-    config_path = "cfg.json"
+    config_path = "cfg_nlp.json"
     config = {
         "n_classes": 2,
         "n_tokens": 256,
@@ -54,20 +55,21 @@ def nlp_config():
     return config_path
 
 
-def test_nlp(nlp_data, nlp_config):
-    train_path, val_path, test_path = nlp_data
+def run_nlp_test(data, config, label_col, proba, **config_overrides):
+    return run_nn_test(
+        data, NlpModel, NlpScorer, config, label_col, proba, **config_overrides
+    )
 
-    # Create NLP Model object (used for training) and fit it
-    model = NlpModel.from_config(nlp_config)
-    model.fit(train_path, val_path, gpus=None)  # use gpus=[0] to use GPU 0
 
-    # Create NLP Scorer (used for predicting) from NLP Model checkpoint folder
-    model_folder = model.ckpt_save_path.format(val=val_path)
-    scorer = NlpScorer.from_folder(model_folder)
+def test_nlp_binary(nlp_data, nlp_config):
+    preds, label = run_nlp_test(nlp_data, nlp_config, label_col="label", proba=True)
+    auc = roc_auc_score(label, preds.iloc[:, 0])
+    assert auc > 0.7
 
-    # Load test data, make predictions, compute AUC
-    test = pd.read_csv(test_path)
-    preds = scorer.predict_proba(test)
-    label = test["label"]
-    auc = roc_auc_score(label, preds.iloc[:, 1])
-    assert auc > 0.81
+
+def test_nlp_regression(nlp_data, nlp_config):
+    preds, label = run_nlp_test(
+        nlp_data, nlp_config, label_col="label", proba=False, n_classes=1, metric="rmse"
+    )
+    score = rmse(label, preds.iloc[:, 0])
+    assert score < 0.5

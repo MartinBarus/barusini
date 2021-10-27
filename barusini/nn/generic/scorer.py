@@ -6,8 +6,9 @@ from scipy.special import softmax
 from tqdm import tqdm
 
 import torch
-from barusini.nn.generic.utils import get_data
+from barusini.constants import TEST_MODE
 from barusini.nn.generic.loading import Serializable
+from barusini.nn.generic.utils import get_data
 from torch.utils.data import DataLoader, SequentialSampler
 
 
@@ -28,7 +29,7 @@ class Scorer(torch.nn.Module, Serializable):
     def predict(self, test_file_path, num_workers=8, batch_size=16, precision=None):
         test = get_data(test_file_path)
         test_ds = self.dataset_class.from_folder(
-            folder_path=self.model_folder, df=test,
+            folder_path=self.model_folder, df=test, mode=TEST_MODE
         )
 
         test_dl = DataLoader(
@@ -49,6 +50,8 @@ class Scorer(torch.nn.Module, Serializable):
         )
         if len(logits.shape) == 1:
             return sigmoid(logits)
+        if logits.shape[1] == 1:
+            return logits.apply(sigmoid, axis=1)
         return logits.apply(softmax, axis=1)
 
     def _predict(self, dl, precision=None):
