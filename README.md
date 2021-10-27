@@ -1,10 +1,15 @@
 # barusini
 
 This library aims to cover basic machine learning modeling workflow. 
-There are two separate parts of the library:
+
+To install run
+```pip install git+https://github.com/MartinBarus/barusini.git```
+
+ 
+There are two parts of the library:
 
 - `barusini.tabular`
-- `barusini.nlp` 
+- `barusini.nn`
 
 ## Tabular Data
 
@@ -133,3 +138,14 @@ model1 = Pipeline(...)
 model2 = Pipeline(...)
 ensemble = Ensemble([model1, model2])
 ```
+
+## Neural Networks
+
+`barusini.nn` is meant to be a simple extensible module for modeling using the `pytorch` framework stack.
+
+Currently this module consists of two sub-modules:
+
+- `barusini.nn.image` - implements Image regression and classification (binary and multi-class)
+- `barusini.nn.nlp` - implements NLP (text) regression and classification (binary and multi-class)
+
+For more information on how to use these sub-modules see `tests/test_nn`.
