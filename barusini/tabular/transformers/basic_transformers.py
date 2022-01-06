@@ -48,7 +48,7 @@ class MissingValueImputer(Transformer):
             else:
                 print(f"Warning!: Column {col} expected but nor found {self}")
         self.new_names = {
-            col: sanitize(f"{col} [{self.agg}]") for col in self.missing
+            col: sanitize(f"{col}[{self.agg}]") for col in self.missing
         }
         X = X.rename(columns=self.new_names)
         return X

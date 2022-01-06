@@ -57,7 +57,9 @@ def get_mnist_data(root, N=1200):
     # Create train and validation dataframes
     paths = [f"{i}_{labels[i]}.jpg" for i in range(len(labels))]
     df = pd.DataFrame({"path": paths[:N], "label": labels[:N]})
-    df["label2"] = (df["label"] > 4).astype(int)
+    for i in range(10):
+        df[f"label_{i}"] = (df["label"] == i).astype(int)
+    df["label_over4"] = (df["label"] > 4).astype(int)
     val_start = int(N * 0.8)
 
     train_df = df.iloc[:val_start]

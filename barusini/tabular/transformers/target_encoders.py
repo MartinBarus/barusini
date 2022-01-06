@@ -104,7 +104,7 @@ class TargetEncoder(Encoder):
         predictors = []
 
         columns = [X.name] if len(X.shape) == 1 else X.columns
-        target_name = ", ".join(list(columns)) + f" {self.target_str}"
+        target_name = ", ".join(list(columns)) + f"{self.target_str}"
         target_name = unique_name(X, target_name)
 
         for train, test in self.fold.split(X):

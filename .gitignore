@@ -118,3 +118,4 @@ venv.bak/
 # test output files
 tests/test_nn/*.json
 tests/test_nn/image_data
+tests/test_nn/*.zip
