@@ -25,7 +25,7 @@ class ImageNet(nn.Module, Serializable):
             in_chans=in_channels,
         )
 
-    def forward(self, input_dict):
+    def forward(self, input_dict, mode):
         return {"logits": self.net(input_dict)}
 
     def load_weights(self, pretrained_weights):

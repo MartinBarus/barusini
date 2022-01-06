@@ -42,7 +42,7 @@ class NlpNet(nn.Module, Serializable):
         self.load_state_dict(state_dict, strict=True)
         print("weights loaded from", pretrained_weights)
 
-    def forward(self, input_dict):
+    def forward(self, input_dict, mode):
         return self.backbone(**input_dict)
 
     def to_folder(self, folder_path=None):
