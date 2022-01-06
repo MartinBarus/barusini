@@ -15,6 +15,10 @@ class Serializable:
 
     @classmethod
     def from_config(cls, config_path, **overrides):  # load unfitted
+        # add reference to original config file to the overrides
+        if "original_config_path" not in overrides:
+            overrides["original_config_path"] = config_path
+
         config = parse_config(config_path, **overrides)
         return cls(**config)
 

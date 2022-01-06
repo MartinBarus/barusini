@@ -28,9 +28,18 @@ class Scorer(torch.nn.Module, Serializable):
 
     def predict(self, test_file_path, num_workers=8, batch_size=16, precision=None):
         test = get_data(test_file_path)
-        test_ds = self.dataset_class.from_folder(
-            folder_path=self.model_folder, df=test, mode=TEST_MODE
-        )
+
+        if self.model_folder is None and "original_config_path" in self.model_overrides:
+            # Load scorer and data from config
+            cfg_path = self.model_overrides["original_config_path"]
+            test_ds = self.dataset_class.from_config(
+                cfg_path, df=test, mode=TEST_MODE, **self.model_overrides
+            )
+        else:
+            # Load scorer and data with tokenizers saved in same folder
+            test_ds = self.dataset_class.from_folder(
+                folder_path=self.model_folder, df=test, mode=TEST_MODE
+            )
 
         test_dl = DataLoader(
             dataset=test_ds,
@@ -80,7 +89,7 @@ class Scorer(torch.nn.Module, Serializable):
                             input_dct[key] = input_dct[key].cuda()
                     else:
                         input_dct = input_dct.cuda()
-                preds = self.model(input_dct)["logits"]
+                preds = self.model(input_dct, TEST_MODE)["logits"]
                 if cuda:
                     all_preds.extend(preds.cpu().tolist())
                 else:

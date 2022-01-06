@@ -50,8 +50,18 @@ class NlpNet(nn.Module, Serializable):
 
     @classmethod
     def from_folder(
-        cls, folder_path=None, best=False, pretrained_weights=None, **overrides
+        cls,
+        folder_path=None,
+        best=False,
+        pretrained_weights=None,
+        original_config_path=None,
+        **overrides
     ):
+        if folder_path is None:
+            return cls.from_config(
+                original_config_path, pretrained_weights=pretrained_weights, **overrides
+            )
+
         config_path = Serializable.get_config_path(folder_path)
         if best:
             pretrained_weights = Serializable.find_best_ckpt(folder_path)
