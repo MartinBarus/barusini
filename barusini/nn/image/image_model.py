@@ -9,7 +9,8 @@ from barusini.nn.image.low_level_model import ImageNet
 
 class ImageModel(HighLevelModel):
     model_class = ImageNet
-    dataset_class = ImageDataset
+    train_dataset_class = ImageDataset
+    val_dataset_class = ImageDataset
 
 
 class ImageScorer(Scorer):

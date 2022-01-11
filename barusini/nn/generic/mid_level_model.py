@@ -9,7 +9,7 @@ from scipy.special import softmax
 
 import pytorch_lightning as pl
 import torch
-from barusini.constants import rmse
+from barusini.constants import rmse, TRAIN_MODE, VALID_MODE
 from barusini.nn.generic.utils import expand_classification_label
 from torch.optim import Adam
 from transformers import AdamW, get_cosine_schedule_with_warmup
@@ -60,6 +60,9 @@ class Model(pl.LightningModule):
         if self.metric.lower() in ["rmse", "mse"]:
             return torch.nn.MSELoss()
 
+        if self.metric.lower() in ["mean_absolute_error"]:
+            return torch.nn.L1Loss()
+
         if self.metric.lower() in ["roc_auc_score", "log_loss"]:
             if self.n_classes < 3:
                 # allows to implement label smoothing, link is sigmoid
@@ -79,8 +82,8 @@ class Model(pl.LightningModule):
         err = f"metric {self.metric} is not supported, use metric from sklearn.metrics"
         raise ValueError(err)
 
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, x, mode):
+        return self.model(x, mode)
 
     def configure_optimizers(self):
         parameters = list(self.model.parameters())
@@ -163,16 +166,16 @@ class Model(pl.LightningModule):
             loss = self.loss_fn(preds, target.long())
         return loss
 
-    def get_loss(self, batch):
+    def get_loss(self, batch, mode):
         input_dict = batch["input"]
         target = batch["target"]
-        output_dict = self.forward(input_dict)
+        output_dict = self.forward(input_dict, mode)
         preds = output_dict["logits"]
         loss = self.loss(preds, target)
         return loss, preds, target
 
     def training_step(self, batch, batch_num):
-        loss, preds, target = self.get_loss(batch)
+        loss, preds, target = self.get_loss(batch, TRAIN_MODE)
         step = self.global_step * self.batch_size * self.gradient_accumulation_steps
         tb_dict = {"train_loss": loss, "step": step}
 
@@ -184,7 +187,7 @@ class Model(pl.LightningModule):
         return output
 
     def validation_step(self, batch, batch_idx):
-        loss, preds, target = self.get_loss(batch)
+        loss, preds, target = self.get_loss(batch, VALID_MODE)
         output = {
             "val_loss": loss.view(1),
             "preds": preds,

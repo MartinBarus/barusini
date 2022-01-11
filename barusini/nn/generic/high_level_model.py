@@ -39,7 +39,8 @@ def get_attributes(self, **kwargs):
 
 class HighLevelModel(Serializable):
     model_class = None
-    dataset_class = None
+    train_dataset_class = None
+    val_dataset_class = None
 
     def __init__(
         self,
@@ -145,10 +146,10 @@ class HighLevelModel(Serializable):
         if val is None:
             val = train
 
-        tr_ds = self.dataset_class.from_config(
+        tr_ds = self.train_dataset_class.from_config(
             config_path=ckpt_conf, df=train, mode=TRAIN_MODE
         )
-        val_ds = self.dataset_class.from_config(
+        val_ds = self.val_dataset_class.from_config(
             config_path=ckpt_conf, df=val, mode=TEST_MODE
         )
 

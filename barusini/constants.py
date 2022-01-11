@@ -103,3 +103,4 @@ DEFAULT_REGRESSION_METRIC = rmse
 
 TRAIN_MODE = "train"
 TEST_MODE = "test"
+VALID_MODE = "validation"

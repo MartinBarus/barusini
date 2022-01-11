@@ -20,12 +20,13 @@ class NLPDataset(Dataset, Serializable):
         self.eps = 1e-6
         self.labels = label
         if self.labels is not None:
-            self.labels = df[self.labels].values
+            if self.labels in df.columns:
+                self.labels = df[self.labels].values
+            else:
+                self.labels = None
 
     def __getitem__(self, idx):
-        inpt = {
-            key: self.tokenized_texts[key][idx] for key in self.tokenized_texts
-        }
+        inpt = {key: self.tokenized_texts[key][idx] for key in self.tokenized_texts}
 
         feature_dict = {
             "idx": torch.tensor(idx).long(),
