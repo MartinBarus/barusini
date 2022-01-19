@@ -61,12 +61,14 @@ class HighLevelModel(Serializable):
         seed=1234,
         val_check_interval=1.0,
         log_every_n_steps=50,
+        metric_threshold=None,
         **kwargs,
     ):
         # settings that affect model's predictions
         self.backbone = backbone
         self.n_classes = n_classes
         self.metric = metric
+        self.metric_threshold = metric_threshold
         self.label = label
         self.batch_size = batch_size
         self.artifact_path = artifact_path
@@ -118,15 +120,23 @@ class HighLevelModel(Serializable):
     def is_trained(self):
         return os.path.exists(self.status_file())
 
-    def fit(self, train, val, num_workers=8, gpus=("0",), verbose=True):
-        param_err = "{} should be path to {} file"
-        if type(train) is not str or not len(train):
+    def fit(self, train, val, val_split=None, num_workers=8, gpus=("0",), verbose=True):
+        assert all([type(gpu) is str for gpu in gpus]), "gpus must be strings"
+        print(
+            "Params", "val_split", val_split, "num_workers", num_workers,
+        )
+        param_err = "{} should be path to {} file or a dataframe"
+        if type(train) not in [str, pd.DataFrame]:
             raise ValueError(param_err.format("train", "training"))
-        if type(val) is not str or not len(val):
+        if type(val) not in [str, pd.DataFrame, type(None)]:
             raise ValueError(param_err.format("val", "validation"))
 
         self.val_data_path = val
-        self.val_split = os.path.basename(val)
+        if val_split is not None:
+            # if fold provided
+            self.val_split = val_split
+        else:
+            self.val_split = os.path.basename(val)
 
         if self.is_trained():
             if verbose:
@@ -144,7 +154,7 @@ class HighLevelModel(Serializable):
         train = get_data(train)
         val = get_data(val)
         if val is None:
-            val = train
+            val = train.head(self.batch_size * 10)
 
         tr_ds = self.train_dataset_class.from_config(
             config_path=ckpt_conf, df=train, mode=TRAIN_MODE
@@ -187,6 +197,7 @@ class HighLevelModel(Serializable):
             weight_decay=self.weight_decay,
             val_check_interval=self.val_check_interval,
             model=self.model_class.from_config(config_path=ckpt_conf),
+            metric_threshold=self.metric_threshold,
         )
 
         trainer.fit(model, tr_dl, val_dl)
@@ -233,7 +244,11 @@ class HighLevelModel(Serializable):
 
     def oof_dataset(self):
         oof_dict = self.get_oof_dict()
-        val = pd.read_csv(self.val_data_path)
+        if type(self.val_data_path) is str:
+            val = pd.read_csv(self.val_data_path)
+        else:
+            # if val provided as pd.DataFrame
+            val = self.val_data_path.copy()
         target = oof_dict["target"]
         # Assert the preds are in correct order
         assert all(np.isclose(val[self.label].values, target))

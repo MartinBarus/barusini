@@ -31,6 +31,7 @@ class Model(pl.LightningModule):
         n_classes,
         weight_decay,
         val_check_interval=1.0,
+        metric_threshold=None,
         model=None,
     ):
         super(Model, self).__init__()
@@ -38,6 +39,7 @@ class Model(pl.LightningModule):
         self.lr = lr
         self.len_tr_dl = len_tr_dl
         self.metric = metric
+        self.metric_threshold = metric_threshold
 
         self.weight_decay = weight_decay
         self.optimizer_str = optimizer
@@ -63,7 +65,12 @@ class Model(pl.LightningModule):
         if self.metric.lower() in ["mean_absolute_error"]:
             return torch.nn.L1Loss()
 
-        if self.metric.lower() in ["roc_auc_score", "log_loss"]:
+        if self.metric.lower() in [
+            "roc_auc_score",
+            "log_loss",
+            "accuracy",
+            "accuracy_score",
+        ]:
             if self.n_classes < 3:
                 # allows to implement label smoothing, link is sigmoid
                 return torch.nn.BCEWithLogitsLoss()
@@ -222,7 +229,11 @@ class Model(pl.LightningModule):
                 out_val["preds"] = softmax(out_val["preds"], axis=1)
                 out_val["target"] = expand_classification_label(out_val["target"])
 
-        val_metric = self.sklearn_metric(out_val["target"], out_val["preds"])
+        if self.metric_threshold is not None:
+            preds = (out_val["preds"] >= self.metric_threshold).astype(int)
+            val_metric = self.sklearn_metric(out_val["target"], preds)
+        else:
+            val_metric = self.sklearn_metric(out_val["target"], out_val["preds"])
 
         tqdm_dict = {
             "val_metric": val_metric,

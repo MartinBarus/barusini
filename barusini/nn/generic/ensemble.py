@@ -5,6 +5,7 @@ from joblib import Parallel, delayed
 from barusini.nn.generic.high_level_model import HighLevelModel
 from barusini.utils import copy_signature
 from barusini.nn.generic.loading import Serializable
+from barusini.nn.generic.utils import get_data
 
 
 class Ensemble(Serializable):
@@ -20,22 +21,30 @@ class Ensemble(Serializable):
         else:
             self.seeds = seed
 
-    @copy_signature(HighLevelModel.fit)
-    def fit(self, train, val, gpus=("0",), **kwargs):
-        assert type(train) in [list, tuple], "train must be list or tuple"
-        assert type(val) in [list, tuple], "val must be list or tuple"
-        assert len(train) == len(val), "train and val must be of same size"
+    def fit(self, train, val, gpus=("0",), fold=None, **kwargs):
+        if fold is None:
+            assert type(train) in [list, tuple], "train must be list or tuple"
+            assert type(val) in [list, tuple], "val must be list or tuple"
+            assert len(train) == len(val), "train and val must be of same size"
+            val_splits = [None] * len(train)
+        else:
+            assert type(train) in [str, pd.DataFrame], (
+                "if fold is provided, " "train should be a string or " "dataframe"
+            )
+            all_data = get_data(train)
+            val_splits = sorted(all_data[fold].unique())
+            print(f"Using fold column {fold}, training folds {val_splits}")
+            train = [all_data.query(f"{fold}!={fld}") for fld in val_splits]
+            val = [all_data.query(f"{fold}=={fld}") for fld in val_splits]
 
         if len(gpus) > 1:
-            self._fit_parallel(train, val, gpus=gpus, **kwargs)
+            self._fit_parallel(train, val, val_splits, gpus=gpus, **kwargs)
         else:
-            self._fit_sequential(train, val, gpus=gpus, **kwargs)
+            self._fit_sequential(train, val, val_splits, gpus=gpus, **kwargs)
 
-    def _fit_parallel(self, train, val, *args, gpus=("0",), **kwargs):
+    def _fit_parallel(self, train, val, val_splits, gpus=("0",), **kwargs):
         n_gpus = len(gpus)
-        parallel = Parallel(
-            n_jobs=n_gpus, verbose=False, pre_dispatch="2*n_jobs"
-        )
+        parallel = Parallel(n_jobs=n_gpus, verbose=False, pre_dispatch="2*n_jobs")
         self.models = []
         for seed in self.seeds:
             act_models = [
@@ -51,14 +60,14 @@ class Ensemble(Serializable):
             delayed(self.models[i].fit)(
                 train[i % n_splits],
                 val[i % n_splits],
-                *args,
+                val_splits[i % n_splits],
                 **kwargs,
                 gpus=gpus[i % n_gpus],
             )
             for i in range(len(self.models))
         )
 
-    def _fit_sequential(self, train, val, *args, gpus=("0",), **kwargs):
+    def _fit_sequential(self, train, val, val_splits, gpus=("0",), **kwargs):
         n_gpus = len(gpus)
         assert n_gpus < 2, "use parallel fit for multi gpus"
         self.models = []
@@ -67,7 +76,9 @@ class Ensemble(Serializable):
                 m = self.high_level_model_class(
                     *self.model_args, seed=seed, **self.model_kwargs
                 )
-                m.fit(train[i], val[i], *args, gpus=gpus[0], **kwargs)
+                m.fit(
+                    train[i], val[i], val_splits[i], gpus=gpus[0], **kwargs,
+                )
                 self.models.append(m)
 
     def get_oof_dict(self):
@@ -108,9 +119,7 @@ class Ensemble(Serializable):
 
     def get_oof_score(self, scorer):
         oof = self.oof_dataset()
-        cv_dict = {
-            col: scorer(oof["label"], oof[col]) for col in self.oof_pred_cols()
-        }
+        cv_dict = {col: scorer(oof["label"], oof[col]) for col in self.oof_pred_cols()}
         if len(cv_dict) > 1:
             cv_dict["mean"] = np.mean(list(cv_dict.values()))
             cv_dict["oof_ens_mean"] = scorer(

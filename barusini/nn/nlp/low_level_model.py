@@ -30,7 +30,9 @@ class NlpNet(nn.Module, Serializable):
             self.model_config = AutoConfig.from_pretrained(backbone)
             self.model_config.num_labels = self.n_classes
             self.backbone = AutoModelForSequenceClassification.from_pretrained(
-                self.backbone_name, config=self.model_config
+                self.backbone_name,
+                config=self.model_config,
+                ignore_mismatched_sizes=True,
             )
         if self.pretrained_weights is not None:
             self.load_weights(self.pretrained_weights)
