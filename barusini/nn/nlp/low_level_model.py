@@ -12,6 +12,7 @@ class NlpNet(nn.Module, Serializable):
         n_classes=None,
         pretrained_weights=None,  # only the weights
         model_folder=None,  # model config, vocab, weights
+        dropout=None,
         **kwargs
     ):
 
@@ -19,6 +20,7 @@ class NlpNet(nn.Module, Serializable):
         self.backbone_name = backbone
         self.pretrained_weights = pretrained_weights
         self.model_folder = model_folder
+        self.dropout = dropout
         if model_folder is not None:
             self.model_config = None
             self.backbone = AutoModelForSequenceClassification.from_pretrained(
@@ -29,6 +31,8 @@ class NlpNet(nn.Module, Serializable):
             self.n_classes = get_real_n_classes(n_classes)
             self.model_config = AutoConfig.from_pretrained(backbone)
             self.model_config.num_labels = self.n_classes
+            if self.dropout:
+                self.model_config.hidden_dropout_prob = self.dropout
             self.backbone = AutoModelForSequenceClassification.from_pretrained(
                 self.backbone_name,
                 config=self.model_config,
