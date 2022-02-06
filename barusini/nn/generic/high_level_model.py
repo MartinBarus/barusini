@@ -24,12 +24,14 @@ def get_attributes(self, **kwargs):
     attrs = [
         a
         for a in sorted(dir(self))
-        if not a.startswith("__") and not callable(getattr(self, a))
+        if not a.startswith("_") and not callable(getattr(self, a))
     ]
     attrs = sorted(attrs)
     dct = OrderedDict()
     for attr in attrs:
-        dct[attr] = getattr(self, attr)
+        val = getattr(self, attr)
+        if val is not None:  # exclude uninitialized params
+            dct[attr] = val
 
     for key, val in kwargs.items():
         dct[key] = val
@@ -37,7 +39,85 @@ def get_attributes(self, **kwargs):
     return dct
 
 
-class HighLevelModel(Serializable):
+class HighLeveMetalModel(Serializable):
+    _ckpt_folder_name = "/ckpt/"
+    _ckpt_file_ext = "*.ckpt"
+
+    def __init__(
+        self,
+        backbone="timm_or_transformers_backbone",
+        artifact_path="barusini_nn/",
+        model_id="",
+        **kwargs,
+    ):
+        self.backbone = backbone
+        self.artifact_path = artifact_path
+        self.model_id = model_id
+        self.val_split = None
+        self._dct_str = None
+        self._hash = None
+        self.experiment_name = None
+        self.experiment_path = None
+        self.ckpt_save_path = None
+        self.logger_path = None
+        self.oof_preds_file = None
+
+    def set_hash(self, **kwargs):
+        # create hash of important settings
+        self._dct_str = json.dumps(get_attributes(self, **kwargs))
+        self._hash = hashlib.md5(self._dct_str.encode("utf-8")).digest()
+        self._hash = base64.b64encode(self._hash).decode("utf-8")
+        self._hash = self._hash.replace("/", "@")
+        self.experiment_name = f"{self.backbone.replace('.pt', '')}_{self._hash}"
+        if self.model_id:
+            self.experiment_name = f"{self.model_id}_{self.experiment_name}"
+        self.experiment_path = self.artifact_path + self.experiment_name
+        self.experiment_path = self.experiment_path + "/{val}/"
+        self.ckpt_save_path = self.experiment_path + self._ckpt_folder_name
+        self.logger_path = self.experiment_path
+        self.oof_preds_file = self.experiment_path + "oof_preds.pickle"
+
+    def checkpoint_folder(self):
+        return self.ckpt_save_path.format(val=self.val_split)
+
+    def config_file(self):
+        return os.path.join(self.checkpoint_folder(), "high_level_config.json")
+
+    def status_file(self):
+        path = self.ckpt_save_path.format(val=self.val_split)
+        return os.path.join(path, "status.txt")
+
+    def is_trained(self):
+        return os.path.exists(self.status_file())
+
+    def remove_duplicated_checkpoint(self):
+        ckpt_save_path = self.ckpt_save_path.format(val=self.val_split)
+        checkpoints = glob.glob(ckpt_save_path + self._ckpt_file_ext)
+        last_checkpoint = [x for x in checkpoints if "last" in x]
+        best_checkpoint = [x for x in checkpoints if "last" not in x]
+        assert len(last_checkpoint) == 1, len(last_checkpoint)
+        assert len(best_checkpoint) == 1, len(best_checkpoint)
+        last_checkpoint = last_checkpoint[0]
+        best_checkpoint = best_checkpoint[0]
+        if filecmp.cmp(last_checkpoint, best_checkpoint):
+            print("Removing duplicated checkpoint")
+            os.remove(best_checkpoint)
+
+    def create_config(self):
+        exp_path = self.experiment_path.format(val=self.val_split)
+        os.makedirs(exp_path, exist_ok=True)
+        ckpt_conf = self.config_file()
+        os.makedirs(os.path.dirname(ckpt_conf), exist_ok=True)
+        with open(ckpt_conf, "w") as file:
+            file.write(self._dct_str)
+        return ckpt_conf
+
+    def write_status_done(self):
+        with open(self.status_file(), "w") as file:
+            file.write("Done.")
+
+
+class HighLevelModel(HighLeveMetalModel):
     model_class = None
     train_dataset_class = None
     val_dataset_class = None
@@ -64,8 +144,14 @@ class HighLevelModel(Serializable):
         metric_threshold=None,
         **kwargs,
     ):
-        # settings that affect model's predictions
-        self.backbone = backbone
+        super().__init__(
+            backbone=backbone, artifact_path=artifact_path, model_id=model_id
+        )
+        assert type(seed) not in [
+            list,
+            tuple,
+        ], "seed has to be a single number, use nlp_ensemble instead!"
+
         self.n_classes = n_classes
         self.metric = metric
         self.metric_threshold = metric_threshold
@@ -80,45 +166,10 @@ class HighLevelModel(Serializable):
         self.precision = precision
         self.weight_decay = weight_decay
         self.seed = seed
-        assert type(seed) not in [
-            list,
-            tuple,
-        ], "seed has to be a single number, use nlp_ensemble instead!"
         self.val_check_interval = val_check_interval
         self.log_every_n_steps = log_every_n_steps
-
-        # create hash of important settings
-        self._dct_str = json.dumps(get_attributes(self, **kwargs))
-        self._hash = hashlib.md5(self._dct_str.encode("utf-8")).digest()
-        self._hash = base64.b64encode(self._hash).decode("utf-8")
-        self._hash = self._hash.replace("/", "@")
-
-        # settings that do NOT affect model's prediction
-        self.model_id = model_id
-
-        self.experiment_name = f"{self.backbone}_{self._hash}"
-        if model_id:
-            self.experiment_name = f"{self.model_id}_{self.experiment_name}"
-        self.experiment_path = self.artifact_path + self.experiment_name
-        self.experiment_path = self.experiment_path + "/{val}/"
-        self.ckpt_save_path = self.experiment_path + "/ckpt/"
-        self.logger_path = self.experiment_path
-        self.oof_preds_file = self.experiment_path + "oof_preds.pickle"
+        self.set_hash(**kwargs)
         self.val_data_path = None
-        self.val_split = None
-
-    def checkpoint_folder(self):
-        return self.ckpt_save_path.format(val=self.val_split)
-
-    def config_file(self):
-        return os.path.join(self.checkpoint_folder(), "high_level_config.json")
-
-    def status_file(self):
-        path = self.ckpt_save_path.format(val=self.val_split)
-        return os.path.join(path, "status.txt")
-
-    def is_trained(self):
-        return os.path.exists(self.status_file())
 
     def fit(self, train, val, val_split=None, num_workers=8, gpus=("0",), verbose=True):
         assert all([type(gpu) is str for gpu in gpus]), "gpus must be strings"
@@ -143,13 +194,7 @@ class HighLevelModel(Serializable):
                 print("Model already trained")
             return
 
-        exp_path = self.experiment_path.format(val=self.val_split)
-        os.makedirs(exp_path, exist_ok=True)
-        ckpt_conf = self.config_file()
-        os.makedirs(os.path.dirname(ckpt_conf), exist_ok=True)
-        with open(ckpt_conf, "w") as file:
-            file.write(self._dct_str)
-
+        ckpt_conf = self.create_config()
         set_seed(self.seed)
         train = get_data(train)
         val = get_data(val)
@@ -204,8 +249,7 @@ class HighLevelModel(Serializable):
         self.remove_duplicated_checkpoint()
         model.model.to_folder(self.checkpoint_folder())
         tr_ds.to_folder(self.checkpoint_folder())
-        with open(self.status_file(), "w") as file:
-            file.write("Done.")
+        self.write_status_done()
 
     def get_trainer(self, gpus):
         logger_path = self.logger_path.format(val=self.val_split)
@@ -254,16 +298,3 @@ class HighLevelModel(Serializable):
         assert all(np.isclose(val[self.label].values, target))
         val["oof_pred"] = oof_dict["preds"]
         return val
-
-    def remove_duplicated_checkpoint(self):
-        ckpt_save_path = self.ckpt_save_path.format(val=self.val_split)
-        checkpoints = glob.glob(ckpt_save_path + "*.ckpt")
-        last_checkpoint = [x for x in checkpoints if "last" in x]
-        best_checkpoint = [x for x in checkpoints if "last" not in x]
-        assert len(last_checkpoint) == 1, len(last_checkpoint)
-        assert len(best_checkpoint) == 1, len(best_checkpoint)
-        last_checkpoint = last_checkpoint[0]
-        best_checkpoint = best_checkpoint[0]
-        if filecmp.cmp(last_checkpoint, best_checkpoint):
-            print("Removing duplicated checkpoint")
-            os.remove(best_checkpoint)
