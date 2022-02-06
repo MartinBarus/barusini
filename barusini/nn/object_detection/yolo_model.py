@@ -1,8 +1,11 @@
 import os
 import subprocess
 import sys
+from collections import OrderedDict
 
+import torch
 from barusini.nn.generic.high_level_model import HighLeveMetalModel, get_attributes
+from barusini.nn.generic.loading import Serializable
 
 
 class YoloModel(HighLeveMetalModel):
@@ -102,6 +105,7 @@ class YoloModel(HighLeveMetalModel):
         multi_scale=False,
         sync_bn=True,
         rect=False,
+        **kwargs,
     ):
         super().__init__(
             backbone=weights, artifact_path=artifact_path, model_id=model_id
@@ -220,5 +224,51 @@ class YoloModel(HighLeveMetalModel):
         return train_cmd
 
 
-class YoloScorer:
-    pass
+class YoloScorer(Serializable):
+    def __init__(
+        self,
+        yolo_lib_path=".",
+        weights_path="",
+        conf=None,
+        augment=True,
+        imgsz=640,
+        **kwargs,
+    ):
+        super(YoloScorer, self).__init__()
+        self.model = torch.hub.load(
+            yolo_lib_path,
+            "custom",
+            path=weights_path,
+            source="local",
+            force_reload=True,
+        )
+        self.augment = augment
+        self.imgsz = imgsz
+
+        if conf:
+            self.model.conf = conf
+
+    def _predict(self, image_path):
+        prediction = self.model(image_path, size=self.imgsz, augment=self.augment)
+        prediction = prediction.pandas().xyxy[0]
+        return prediction
+
+    def predict(self, data):
+        if type(data) is str:
+            return self._predict(data)
+
+        predictions = OrderedDict()
+        for image_path in data:
+            predictions[image_path] = self._predict(image_path)
+
+        return predictions
+
+    @classmethod
+    def from_folder(cls, folder_path=None, best=False, **overrides):
+        if not os.path.isdir(folder_path):
+            raise ValueError(f"Incorrect path '{folder_path}'")
+
+        config_path = Serializable.get_config_path(folder_path)
+        weights_path = "best.pt" if best else "last.pt"
+        weights_path = os.path.join(folder_path, weights_path)
+        return cls.from_config(config_path, weights_path=weights_path, **overrides)
