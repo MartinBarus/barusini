@@ -58,6 +58,7 @@ class YoloModel(HighLeveMetalModel):
         "optimizer",
         "label_smoothing",
         "patience",
+        "weights",
     ]
 
     def __init__(
@@ -108,7 +109,9 @@ class YoloModel(HighLeveMetalModel):
         **kwargs,
     ):
         super().__init__(
-            backbone=weights, artifact_path=artifact_path, model_id=model_id
+            backbone=os.path.basename(weights),
+            artifact_path=artifact_path,
+            model_id=model_id,
         )
 
         self.yolo_lib_path = yolo_lib_path
@@ -121,6 +124,7 @@ class YoloModel(HighLeveMetalModel):
         self.lr0 = lr0
         self.lrf = lrf
         self.momentum = momentum
+        self.weights = weights
         self.weight_decay = weight_decay
         self.warmup_epochs = warmup_epochs
         self.warmup_momentum = warmup_momentum
