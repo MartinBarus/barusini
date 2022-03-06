@@ -142,6 +142,7 @@ class HighLevelModel(HighLeveMetalModel):
         val_check_interval=1.0,
         log_every_n_steps=50,
         metric_threshold=None,
+        metric_kwargs={},
         **kwargs,
     ):
         super().__init__(
@@ -155,6 +156,7 @@ class HighLevelModel(HighLeveMetalModel):
         self.n_classes = n_classes
         self.metric = metric
         self.metric_threshold = metric_threshold
+        self.metric_kwargs = metric_kwargs
         self.label = label
         self.batch_size = batch_size
         self.artifact_path = artifact_path
@@ -243,6 +245,7 @@ class HighLevelModel(HighLeveMetalModel):
             val_check_interval=self.val_check_interval,
             model=self.model_class.from_config(config_path=ckpt_conf),
             metric_threshold=self.metric_threshold,
+            metric_kwargs=self.metric_kwargs,
         )
 
         trainer.fit(model, tr_dl, val_dl)

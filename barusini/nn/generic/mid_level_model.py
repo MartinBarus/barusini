@@ -9,7 +9,8 @@ from scipy.special import softmax
 
 import pytorch_lightning as pl
 import torch
-from barusini.constants import rmse, TRAIN_MODE, VALID_MODE
+from barusini.constants import TRAIN_MODE, VALID_MODE, rmse
+from barusini.nn.generic.nn_utils import ArcFaceLoss
 from barusini.nn.generic.utils import expand_classification_label
 from torch.optim import Adam
 from transformers import AdamW, get_cosine_schedule_with_warmup
@@ -32,6 +33,7 @@ class Model(pl.LightningModule):
         weight_decay,
         val_check_interval=1.0,
         metric_threshold=None,
+        metric_kwargs={},
         model=None,
     ):
         super(Model, self).__init__()
@@ -40,6 +42,7 @@ class Model(pl.LightningModule):
         self.len_tr_dl = len_tr_dl
         self.metric = metric
         self.metric_threshold = metric_threshold
+        self.metric_kwargs = metric_kwargs
 
         self.weight_decay = weight_decay
         self.optimizer_str = optimizer
@@ -59,6 +62,9 @@ class Model(pl.LightningModule):
         self.num_train_steps = math.ceil(len_tr_dl / gradient_accumulation_steps)
 
     def get_loss_fn(self):
+        if self.metric.lower() in ["arcface"]:
+            return ArcFaceLoss(**self.metric_kwargs)
+
         if self.metric.lower() in ["rmse", "mse"]:
             return torch.nn.MSELoss()
 
@@ -80,6 +86,9 @@ class Model(pl.LightningModule):
 
     def get_sklearn_metric(self):
         metric_name = self.metric.lower()
+        if metric_name == "arcface":
+            return sklearn.metrics.accuracy_score
+
         if metric_name == "rmse":
             return rmse
 

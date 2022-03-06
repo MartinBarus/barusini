@@ -21,8 +21,8 @@ class Ensemble(Serializable):
         else:
             self.seeds = seed
 
-    def fit(self, train, val, gpus=("0",), fold=None, **kwargs):
-        if fold is None:
+    def fit(self, train, val, gpus=("0",), fold_col=None, folds=None, **kwargs):
+        if fold_col is None:
             assert type(train) in [list, tuple], "train must be list or tuple"
             assert type(val) in [list, tuple], "val must be list or tuple"
             assert len(train) == len(val), "train and val must be of same size"
@@ -32,12 +32,16 @@ class Ensemble(Serializable):
                 "if fold is provided, " "train should be a string or " "dataframe"
             )
             all_data = get_data(train)
-            val_splits = sorted(all_data[fold].unique())
-            print(f"Using fold column {fold}, training folds {val_splits}")
-            train = [all_data.query(f"{fold}!={fld}") for fld in val_splits]
-            val = [all_data.query(f"{fold}=={fld}") for fld in val_splits]
+            val_splits = sorted(all_data[fold_col].unique())
+            if folds is not None:
+                assert all([x in val_splits for x in folds]), "Incorrect folds"
+                val_splits = folds
 
-        if len(gpus) > 1:
+            print(f"Using fold column {fold_col}, training folds {val_splits}")
+            train = [all_data.query(f"{fold_col}!={fld}") for fld in val_splits]
+            val = [all_data.query(f"{fold_col}=={fld}") for fld in val_splits]
+
+        if len(gpus) > 1 and len(val_splits) > 1:
             self._fit_parallel(train, val, val_splits, gpus=gpus, **kwargs)
         else:
             self._fit_sequential(train, val, val_splits, gpus=gpus, **kwargs)
