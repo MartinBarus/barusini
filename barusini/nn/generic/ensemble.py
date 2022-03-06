@@ -31,6 +31,7 @@ class Ensemble(Serializable):
             assert type(train) in [str, pd.DataFrame], (
                 "if fold is provided, " "train should be a string or " "dataframe"
             )
+            name = train
             all_data = get_data(train)
             val_splits = sorted(all_data[fold_col].unique())
             if folds is not None:
@@ -40,6 +41,8 @@ class Ensemble(Serializable):
             print(f"Using fold column {fold_col}, training folds {val_splits}")
             train = [all_data.query(f"{fold_col}!={fld}") for fld in val_splits]
             val = [all_data.query(f"{fold_col}=={fld}") for fld in val_splits]
+            name = f"{all_data.shape[0]}_rows" if type(name) is not str else name
+            val_splits = [f"{name}_{splt}" for splt in val_splits]
 
         if len(gpus) > 1 and len(val_splits) > 1:
             self._fit_parallel(train, val, val_splits, gpus=gpus, **kwargs)

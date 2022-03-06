@@ -239,8 +239,13 @@ class Model(pl.LightningModule):
                 out_val["target"] = expand_classification_label(out_val["target"])
 
         if self.metric_threshold is not None:
-            preds = (out_val["preds"] >= self.metric_threshold).astype(int)
-            val_metric = self.sklearn_metric(out_val["target"], preds)
+            if self.metric_threshold == "argmax":
+                preds = out_val["preds"].argmax(axis=1).astype(int)
+                target = out_val["target"].argmax(axis=1).astype(int)
+            else:
+                preds = (out_val["preds"] >= self.metric_threshold).astype(int)
+                target = out_val["target"]
+            val_metric = self.sklearn_metric(target, preds)
         else:
             val_metric = self.sklearn_metric(out_val["target"], out_val["preds"])
 
