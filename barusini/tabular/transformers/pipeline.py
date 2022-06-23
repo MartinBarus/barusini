@@ -158,6 +158,10 @@ class Pipeline(Transformer):
         n_trials=20,
         n_jobs=4,
         seed=None,
+        full_fit=True,
+        X_test=None,
+        csv_path=None,
+        **kwargs,
     ):
         if probability is None:
             probability = get_probability(score)
@@ -184,7 +188,7 @@ class Pipeline(Transformer):
             self,
             X_train=X,
             y_train=y,
-            X_test=None,
+            X_test=X_test,
             cv=cv,
             scoring=score,
             maximize=maximize,
@@ -193,9 +197,10 @@ class Pipeline(Transformer):
             static_params=static_params,
             additional_fit_params=additional_fit_params,
             attributes_to_monitor=attributes_to_monitor,
-            csv_path=None,
+            csv_path=csv_path,
             n_trials=n_trials,
             n_jobs=n_jobs,
+            **kwargs,
         )
         used_static_params = {
             k: v
@@ -203,5 +208,8 @@ class Pipeline(Transformer):
             if k not in attributes_to_monitor
         }
         self.model = self.model.__class__(**best.params, **used_static_params)
-        self.fit(X, y)
+
+        if full_fit:
+            self.fit(X, y)
+
         return best

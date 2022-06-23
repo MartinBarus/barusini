@@ -247,9 +247,10 @@ class Trial:
         if print_intermediate_results:
             print("XGB OOF CV =", print_score)
         if csv_path:
-            oof_path = csv_path.format(score, "OOF")
+            score_str = round(score, 5)
+            oof_path = csv_path.format(score_str, "OOF")
             np.savetxt(oof_path, oof)
-            test_path = csv_path.format(score, "TEST")
+            test_path = csv_path.format(score_str, "TEST")
             np.savetxt(test_path, preds)
 
         return score
