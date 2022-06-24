@@ -33,6 +33,7 @@ class Model(pl.LightningModule):
         val_check_interval=1.0,
         metric_threshold=None,
         model=None,
+        classification=None,
     ):
         super(Model, self).__init__()
 
@@ -57,6 +58,7 @@ class Model(pl.LightningModule):
         self.model = model
         self.val_check_interval = val_check_interval
         self.num_train_steps = math.ceil(len_tr_dl / gradient_accumulation_steps)
+        self.classification = classification
 
     def get_loss_fn(self):
         if self.metric.lower() in ["rmse", "mse"]:
@@ -167,10 +169,16 @@ class Model(pl.LightningModule):
             return [self.optimizer]
 
     def loss(self, preds, target):
-        if self.n_classes < 3:
-            loss = self.loss_fn(preds.view(-1), target)
-        else:
-            loss = self.loss_fn(preds, target.long())
+        if len(preds.shape) == 2 and preds.shape[1] == 1:
+            preds = preds.squeeze()
+
+        if len(target.shape) == 2 and target.shape[1] == 1:
+            target = target.squeeze()
+
+        if self.classification:
+            target = target.long()
+
+        loss = self.loss_fn(preds, target)
         return loss
 
     def get_loss(self, batch, mode):
@@ -220,7 +228,7 @@ class Model(pl.LightningModule):
             pickle.dump(out_val, handle)
 
         val_loss_mean = np.mean(out_val["val_loss"])
-        if self.n_classes > 1:
+        if self.n_classes > 1 and self.classification:
             # turn logits into probabilities for sklearn metrics
             out_val["target"] = out_val["target"].round().astype(int)
             if self.n_classes == 2:

@@ -13,6 +13,7 @@ class NlpNet(nn.Module, Serializable):
         pretrained_weights=None,  # only the weights
         model_folder=None,  # model config, vocab, weights
         dropout=None,
+        classification=None,
         **kwargs
     ):
 
@@ -28,7 +29,11 @@ class NlpNet(nn.Module, Serializable):
             )
             print("Model loaded from", model_folder)
         else:
-            self.n_classes = get_real_n_classes(n_classes)
+
+            if classification:
+                n_classes = get_real_n_classes(n_classes)
+
+            self.n_classes = n_classes
             self.model_config = AutoConfig.from_pretrained(backbone)
             self.model_config.num_labels = self.n_classes
             if self.dropout:

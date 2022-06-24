@@ -14,13 +14,18 @@ class ImageNet(nn.Module, Serializable):
         n_classes=2,
         in_channels=3,
         pretrained_weights=None,
+        classification=None,
         **kwargs
     ):
         super().__init__()
+
+        if classification:
+            n_classes = get_real_n_classes(n_classes)
+
         self.net = timm.create_model(
             model_name=backbone,
             pretrained=pretrained_weights,
-            num_classes=get_real_n_classes(n_classes),
+            num_classes=n_classes,
             drop_rate=0,
             in_chans=in_channels,
         )

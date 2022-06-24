@@ -14,6 +14,7 @@ from barusini.constants import TEST_MODE, TRAIN_MODE
 from barusini.nn.generic.loading import Serializable
 from barusini.nn.generic.mid_level_model import Model
 from barusini.nn.generic.utils import get_data, set_seed
+from barusini.utils import is_classification_metric
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -142,6 +143,7 @@ class HighLevelModel(HighLeveMetalModel):
         val_check_interval=1.0,
         log_every_n_steps=50,
         metric_threshold=None,
+        classification=None,
         **kwargs,
     ):
         super().__init__(
@@ -170,6 +172,10 @@ class HighLevelModel(HighLeveMetalModel):
         self.log_every_n_steps = log_every_n_steps
         self.set_hash(**kwargs)
         self.val_data_path = None
+        self.classification = classification
+
+        if self.classification is None:
+            self.classification = is_classification_metric(metric)
 
     def fit(self, train, val, val_split=None, num_workers=8, gpus=("0",), verbose=True):
         assert all([type(gpu) is str for gpu in gpus]), "gpus must be strings"
@@ -243,6 +249,7 @@ class HighLevelModel(HighLeveMetalModel):
             val_check_interval=self.val_check_interval,
             model=self.model_class.from_config(config_path=ckpt_conf),
             metric_threshold=self.metric_threshold,
+            classification=self.classification,
         )
 
         trainer.fit(model, tr_dl, val_dl)

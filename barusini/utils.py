@@ -159,6 +159,13 @@ def is_classification(model):
     )
 
 
+def is_classification_metric(metric):
+    if metric in METRIC_DICT:
+        return METRIC_DICT[metric]["clf"]
+
+    raise ValueError(f"Unknown whether {metric} is a classification metric.")
+
+
 def get_probability(metric):
     metric = get_metric_str(metric)
     if metric not in METRIC_DICT:
@@ -171,9 +178,7 @@ def get_probability(metric):
 def get_maximize(metric):
     metric = get_metric_str(metric)
     if metric not in METRIC_DICT:
-        raise ValueError(
-            f"Can not infer if score {metric} should be maximized."
-        )
+        raise ValueError(f"Can not infer if score {metric} should be maximized.")
     return METRIC_DICT[metric]["maximize"]
 
 
