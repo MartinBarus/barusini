@@ -11,8 +11,8 @@ import pytorch_lightning as pl
 import torch
 from barusini.constants import rmse, TRAIN_MODE, VALID_MODE
 from barusini.nn.generic.utils import expand_classification_label
-from torch.optim import Adam
-from transformers import AdamW, get_cosine_schedule_with_warmup
+from torch.optim import Adam, AdamW
+from transformers import get_cosine_schedule_with_warmup
 
 
 class Model(pl.LightningModule):
@@ -34,6 +34,8 @@ class Model(pl.LightningModule):
         metric_threshold=None,
         model=None,
         classification=None,
+        custom_metric=None,
+        custom_loss=None,
     ):
         super(Model, self).__init__()
 
@@ -53,6 +55,8 @@ class Model(pl.LightningModule):
         self.experiment_name = experiment_name
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.n_classes = n_classes
+        self.custom_metric = custom_metric
+        self.custom_loss = custom_loss
         self.loss_fn = self.get_loss_fn()  # used for computing gradient
         self.sklearn_metric = self.get_sklearn_metric()  # used as val loss
         self.model = model
@@ -61,6 +65,9 @@ class Model(pl.LightningModule):
         self.classification = classification
 
     def get_loss_fn(self):
+        if self.custom_loss:
+            return self.custom_loss
+
         if self.metric.lower() in ["rmse", "mse"]:
             return torch.nn.MSELoss()
 
@@ -78,9 +85,14 @@ class Model(pl.LightningModule):
                 return torch.nn.BCEWithLogitsLoss()
             # link is softmax
             return torch.nn.CrossEntropyLoss()
-        raise ValueError(f"metric {self.metric} not supported")
+        raise ValueError(
+            f"loss for metric '{self.metric}' is not supported, provide custom loss"
+        )
 
     def get_sklearn_metric(self):
+        if self.custom_metric:
+            return self.custom_metric
+
         metric_name = self.metric.lower()
         if metric_name == "rmse":
             return rmse
@@ -88,7 +100,11 @@ class Model(pl.LightningModule):
         if hasattr(sklearn.metrics, metric_name):
             return getattr(sklearn.metrics, metric_name)
 
-        err = f"metric {self.metric} is not supported, use metric from sklearn.metrics"
+        err = (
+            f"metric '{self.metric}' is not supported, use metric from "
+            f"sklearn.metrics or provide custom metric"
+        )
+
         raise ValueError(err)
 
     def forward(self, x, mode):
