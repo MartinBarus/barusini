@@ -7,6 +7,16 @@ import cv2
 import torch
 from barusini.constants import TEST_MODE, TRAIN_MODE
 from barusini.nn.generic.loading import Serializable
+from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+from torchvision.transforms.functional import normalize
+
+BASIC_IMG_NORM = "basic"
+IMAGENET_IMG_NORM = "imagenet"
+
+NORM_DICT = {
+    BASIC_IMG_NORM: None,
+    IMAGENET_IMG_NORM: {"mean": IMAGENET_DEFAULT_MEAN, "std": IMAGENET_DEFAULT_STD},
+}
 
 
 class ImageDataset(torch.utils.data.Dataset, Serializable):
@@ -20,9 +30,17 @@ class ImageDataset(torch.utils.data.Dataset, Serializable):
         additional_augment=[A.HorizontalFlip(p=0.5)],
         image_height=224,
         image_width=224,
+        image_normalization=IMAGENET_IMG_NORM,
         mode=TEST_MODE,
         **kwargs,
     ):
+
+        self.normalization = image_normalization
+        assert self.normalization in NORM_DICT.keys(), (
+            f"{self.normalization} image normalization is not supported, choose one of "
+            f"{list(NORM_DICT.keys())}"
+        )
+
         if type(df) is str:
             df = pd.read_csv(df)
 
@@ -57,9 +75,14 @@ class ImageDataset(torch.utils.data.Dataset, Serializable):
         else:
             raise ValueError(f"Unsupported data mode {self.mode}!")
 
+        image = torch.tensor(image.transpose((2, 0, 1)), dtype=torch.float)
+        norm_kwargs = NORM_DICT[self.normalization]
+        if norm_kwargs:
+            image = normalize(image, **norm_kwargs)
+
         feature_dict = {
             "idx": torch.tensor(index).long(),
-            "input": torch.tensor(image.transpose((2, 0, 1)), dtype=torch.float),
+            "input": image,
         }
 
         if self.labels is not None:

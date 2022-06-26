@@ -13,7 +13,7 @@ class ImageNet(nn.Module, Serializable):
         backbone="resnet34",
         n_classes=2,
         in_channels=3,
-        pretrained_weights=None,
+        pretrained_weights=True,
         classification=None,
         **kwargs
     ):
@@ -49,7 +49,7 @@ class ImageNet(nn.Module, Serializable):
         else:
             pretrained_weights = os.path.join(folder_path, "last.ckpt")
 
-        obj = cls.from_config(config_path, **overrides)
+        obj = cls.from_config(config_path, pretrained_weights=False, **overrides)
 
         obj.load_weights(pretrained_weights)
         return obj
