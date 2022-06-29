@@ -14,6 +14,7 @@ from barusini.constants import TEST_MODE, TRAIN_MODE
 from barusini.nn.generic.loading import Serializable
 from barusini.nn.generic.mid_level_model import Model
 from barusini.nn.generic.utils import get_data, set_seed
+from barusini.utils import is_classification_metric
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -142,6 +143,7 @@ class HighLevelModel(HighLeveMetalModel):
         val_check_interval=1.0,
         log_every_n_steps=50,
         metric_threshold=None,
+        classification=None,
         **kwargs,
     ):
         super().__init__(
@@ -170,9 +172,31 @@ class HighLevelModel(HighLeveMetalModel):
         self.log_every_n_steps = log_every_n_steps
         self.set_hash(**kwargs)
         self.val_data_path = None
+        self.classification = classification
 
-    def fit(self, train, val, val_split=None, num_workers=8, gpus=("0",), verbose=True):
+    def fit(
+        self,
+        train,
+        val,
+        val_split=None,
+        num_workers=8,
+        gpus=("0",),
+        verbose=True,
+        custom_metric=None,
+        custom_loss=None,
+    ):
         assert all([type(gpu) is str for gpu in gpus]), "gpus must be strings"
+
+        classification = self.classification
+        if custom_metric or custom_loss:
+            err = "In case of custom {} you must also provide custom {}."
+            assert self.classification is not None, "specify if this is classification"
+            assert custom_metric is not None, err.format("loss", "metric")
+            assert custom_loss is not None, err.format("metric", "loss")
+
+        elif self.classification is None:
+            classification = is_classification_metric(self.metric)
+
         print(
             "Params", "val_split", val_split, "num_workers", num_workers,
         )
@@ -243,6 +267,9 @@ class HighLevelModel(HighLeveMetalModel):
             val_check_interval=self.val_check_interval,
             model=self.model_class.from_config(config_path=ckpt_conf),
             metric_threshold=self.metric_threshold,
+            classification=classification,
+            custom_metric=custom_metric,
+            custom_loss=custom_loss,
         )
 
         trainer.fit(model, tr_dl, val_dl)
