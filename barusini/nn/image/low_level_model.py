@@ -20,6 +20,7 @@ class ImageNet(nn.Module, Serializable):
         pretrained_weights=True,
         classification=None,
         head=LINEAR_HEAD,
+        timm_kwargs=None,
         **kwargs,
     ):
         super().__init__()
@@ -32,13 +33,18 @@ class ImageNet(nn.Module, Serializable):
         else:
             timm_n_classes = 0
 
-        self.net = timm.create_model(
+        net_kwargs = dict(
             model_name=backbone,
             pretrained=pretrained_weights,
             num_classes=timm_n_classes,
             drop_rate=0,
             in_chans=in_channels,
         )
+
+        if timm_kwargs:
+            net_kwargs = {**net_kwargs, **timm_kwargs}
+
+        self.net = timm.create_model(**net_kwargs)
 
         if head == LINEAR_HEAD:
             self.head = torch.nn.Linear(self.net.num_features, n_classes)
