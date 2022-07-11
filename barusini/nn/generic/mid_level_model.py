@@ -191,7 +191,9 @@ class Model(pl.LightningModule):
         if len(target.shape) == 2 and target.shape[1] == 1:
             target = target.squeeze()
 
-        if self.classification:
+        if self.classification and not isinstance(
+            self.loss_fn, torch.nn.BCEWithLogitsLoss
+        ):
             target = target.long()
 
         loss = self.loss_fn(preds, target)
