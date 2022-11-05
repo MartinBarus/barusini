@@ -3,7 +3,7 @@
 This library aims to cover basic machine learning modeling workflow. 
 
 To install run
-```pip install git+https://github.com/MartinBarus/barusini.git```
+```pip install git+https://github.com/MartinBarus/barusini.git[complete]```
 
  
 There are two parts of the library:

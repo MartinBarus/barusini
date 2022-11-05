@@ -2,6 +2,7 @@ from barusini.tabular.feature_engineering import (
     auto_ml,
     feature_engineering,
     model_search,
+    predict,
 )
 from barusini.tabular.stages.base_stage import ALLOWED_TRANSFORMERS
 from barusini.tabular.stages.basic_preprocess import (
@@ -13,4 +14,5 @@ from barusini.tabular.stages.categorical_encoding import (
     recode_categoricals,
 )
 from barusini.tabular.stages.feature_selection import find_best_subset
+from barusini.tabular.stages.hyper_parameter_tuning import *
 from barusini.tabular.stages.imputation import find_best_imputation

@@ -5,8 +5,6 @@ import pandas as pd
 
 import optuna
 from barusini.utils import deepcopy
-from lightgbm import LGBMModel
-from xgboost import XGBModel
 
 LOG = "log"
 LOGINT = "logint"
@@ -380,10 +378,11 @@ class LightGBMTrial(TreeTrial):
 
 
 def get_trial_for_model(model, seed=None):
-    if isinstance(model, LGBMModel):
+    class_name = model.__class__.__name__
+    if class_name.startswith("LGBM") or class_name.startswith("DaskLGBM"):
         return LightGBMTrial(seed=seed)
 
-    if isinstance(model, XGBModel):
+    if class_name.startswith("XGB"):
         return XGBoostTrial(seed=seed)
 
     return Trial(seed=seed)
