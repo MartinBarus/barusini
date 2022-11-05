@@ -10,6 +10,37 @@ else:
 requirements = parse_requirements("requirements.txt", session="requirements")
 requirements = [x.requirement for x in requirements]
 
+extras = {
+    "tabular": ["optuna"],
+    "nn": [
+        "albumentations",
+        "opencv-python",
+        "pytorch_lightning",
+        "timm",
+        "torch",
+        "transformers",
+    ],
+    "extra": ["lightgbm", "xgboost"],
+}
+
+extras_require = {"complete": []}
+
+for package, reqs in extras.items():
+    extras_require[package] = []
+    for act_req in reqs:
+        for req in requirements:
+            if act_req in req:
+                extras_require[package].append(req)
+                extras_require["complete"].append(req)
+
+    extras_require[package] = sorted(extras_require[package])
+
+extras_require["complete"] = sorted(set(extras_require["complete"]))
+
+requirements = sorted([x for x in requirements if x not in extras_require["complete"]])
+
+packages = ["barusini"]
+
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -30,7 +61,8 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=requirements,
-    packages=setuptools.find_packages(include=["barusini"]),
+    packages=packages,
     package_data={"barusini": ["*/*.py", "*/*/*.py"]},
+    extras_require=extras_require,
     python_requires=">=3.6",
 )
