@@ -12,9 +12,11 @@ class NlpModel(HighLevelModel):
     train_dataset_class = NLPDataset
     val_dataset_class = NLPDataset
 
-    def fit(self, train, val, num_workers=8, gpus=("0",), verbose=True):
+    def fit(self, train, val, num_workers=8, gpus=("0",), verbose=True, **kwargs):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        super().fit(train, val, num_workers, gpus, verbose)
+        super().fit(
+            train, val, num_workers=num_workers, gpus=gpus, verbose=verbose, **kwargs
+        )
 
 
 class NlpScorer(Scorer):

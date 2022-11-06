@@ -73,26 +73,26 @@ class HighLeveMetalModel(Serializable):
         if self.model_id:
             self.experiment_name = f"{self.model_id}_{self.experiment_name}"
         self.experiment_path = self.artifact_path + self.experiment_name
-        self.experiment_path = self.experiment_path + "/{val}/"
+        self.experiment_path = self.experiment_path + "/{val}/seed_{seed}"
         self.ckpt_save_path = self.experiment_path + self._ckpt_folder_name
         self.logger_path = self.experiment_path
         self.oof_preds_file = self.experiment_path + "oof_preds.pickle"
 
     def checkpoint_folder(self):
-        return self.ckpt_save_path.format(val=self.val_split)
+        return self.ckpt_save_path.format(val=self.val_split, seed=self._seed)
 
     def config_file(self):
         return os.path.join(self.checkpoint_folder(), "high_level_config.json")
 
     def status_file(self):
-        path = self.ckpt_save_path.format(val=self.val_split)
+        path = self.ckpt_save_path.format(val=self.val_split, seed=self._seed)
         return os.path.join(path, "status.txt")
 
     def is_trained(self):
         return os.path.exists(self.status_file())
 
     def remove_duplicated_checkpoint(self):
-        ckpt_save_path = self.ckpt_save_path.format(val=self.val_split)
+        ckpt_save_path = self.ckpt_save_path.format(val=self.val_split, seed=self._seed)
         checkpoints = glob.glob(ckpt_save_path + self._ckpt_file_ext)
         last_checkpoint = [x for x in checkpoints if "last" in x]
         best_checkpoint = [x for x in checkpoints if "last" not in x]
@@ -105,7 +105,7 @@ class HighLeveMetalModel(Serializable):
             os.remove(best_checkpoint)
 
     def create_config(self):
-        exp_path = self.experiment_path.format(val=self.val_split)
+        exp_path = self.experiment_path.format(val=self.val_split, seed=self._seed)
         os.makedirs(exp_path, exist_ok=True)
         ckpt_conf = self.config_file()
         os.makedirs(os.path.dirname(ckpt_conf), exist_ok=True)
@@ -149,6 +149,9 @@ class HighLevelModel(HighLeveMetalModel):
         super().__init__(
             backbone=backbone, artifact_path=artifact_path, model_id=model_id
         )
+        if seed is None:
+            seed = np.random.randint(1, 1e4)
+
         assert type(seed) not in [
             list,
             tuple,
@@ -167,7 +170,7 @@ class HighLevelModel(HighLeveMetalModel):
         self.max_epochs = max_epochs
         self.precision = precision
         self.weight_decay = weight_decay
-        self.seed = seed
+        self._seed = seed
         self.val_check_interval = val_check_interval
         self.log_every_n_steps = log_every_n_steps
         self.set_hash(**kwargs)
@@ -185,8 +188,6 @@ class HighLevelModel(HighLeveMetalModel):
         custom_metric=None,
         custom_loss=None,
     ):
-        assert all([type(gpu) is str for gpu in gpus]), "gpus must be strings"
-
         classification = self.classification
         if custom_metric or custom_loss:
             err = "In case of custom {} you must also provide custom {}."
@@ -219,7 +220,7 @@ class HighLevelModel(HighLeveMetalModel):
             return
 
         ckpt_conf = self.create_config()
-        set_seed(self.seed)
+        set_seed(self._seed)
         train = get_data(train)
         val = get_data(val)
         if val is None:
@@ -260,7 +261,7 @@ class HighLevelModel(HighLeveMetalModel):
             scheduler=self.scheduler,
             max_epochs=self.max_epochs,
             batch_size=self.batch_size,
-            model_path=self.oof_preds_file.format(val=self.val_split),
+            model_path=self.oof_preds_file.format(val=self.val_split, seed=self._seed),
             experiment_name=self.experiment_name,
             n_classes=self.n_classes,
             weight_decay=self.weight_decay,
@@ -279,10 +280,10 @@ class HighLevelModel(HighLeveMetalModel):
         self.write_status_done()
 
     def get_trainer(self, gpus):
-        logger_path = self.logger_path.format(val=self.val_split)
+        logger_path = self.logger_path.format(val=self.val_split, seed=self._seed)
         logger = TensorBoardLogger(save_dir=logger_path)
 
-        ckpt_save_path = self.ckpt_save_path.format(val=self.val_split)
+        ckpt_save_path = self.ckpt_save_path.format(val=self.val_split, seed=self._seed)
         ckpt = ModelCheckpoint(
             ckpt_save_path,
             monitor="val_loss",
@@ -293,9 +294,12 @@ class HighLevelModel(HighLeveMetalModel):
             save_weights_only=True,
         )
 
-        experiment_path = self.experiment_path.format(val=self.val_split)
+        experiment_path = self.experiment_path.format(
+            val=self.val_split, seed=self._seed
+        )
         return Trainer(
-            gpus=gpus,
+            accelerator="gpu",
+            devices=gpus,
             logger=logger,
             resume_from_checkpoint=None,
             max_epochs=self.max_epochs,
@@ -309,7 +313,7 @@ class HighLevelModel(HighLeveMetalModel):
         )
 
     def get_oof_dict(self):
-        oof_file_path = self.oof_preds_file.format(val=self.val_split)
+        oof_file_path = self.oof_preds_file.format(val=self.val_split, seed=self._seed)
         with open(oof_file_path, "rb") as file:
             return pickle.load(file)
 
