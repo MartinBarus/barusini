@@ -56,16 +56,17 @@ class NlpNet(nn.Module, Serializable):
         self.backbone = None
         self.head = None
         self.pooling = get_pooling(pooling)
+
+        if classification:
+            n_classes = get_real_n_classes(n_classes)
+
+        self.n_classes = n_classes
+
         if model_folder is not None:
             self.model_config = None
             self.get_architecture(head, model_folder=model_folder)
             print("Model loaded from", model_folder)
         else:
-
-            if classification:
-                n_classes = get_real_n_classes(n_classes)
-
-            self.n_classes = n_classes
             self.model_config = AutoConfig.from_pretrained(backbone)
             self.model_config.num_labels = self.n_classes
             if self.dropout is not None:
