@@ -20,7 +20,10 @@ class NLPDataset(Dataset, Serializable):
         self.eps = 1e-6
         self.labels = label
         if self.labels is not None:
-            if self.labels in df.columns:
+            if (isinstance(self.labels, str) and self.labels in df.columns) or (
+                isinstance(self.labels, list)
+                and all([x in df.columns for x in self.labels])
+            ):
                 self.labels = df[self.labels].values
             else:
                 self.labels = None
