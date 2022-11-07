@@ -1,3 +1,5 @@
+import os
+
 import torch
 from barusini.nn.generic.loading import Serializable
 from barusini.nn.generic.utils import get_real_n_classes
@@ -108,7 +110,7 @@ class NlpNet(nn.Module, Serializable):
         state_dict = torch.load(pretrained_weights, map_location="cpu")
         # remove "model." from the keys
         state_dict = {k[6:]: v for k, v in state_dict["state_dict"].items()}
-        self.load_state_dict(state_dict, strict=True)
+        self.load_state_dict(state_dict, strict=False)
         print("weights loaded from", pretrained_weights)
 
     def forward(self, input_dict, mode):
@@ -122,8 +124,36 @@ class NlpNet(nn.Module, Serializable):
 
         return x
 
+    @staticmethod
+    def remove_duplicate_weights(folder_path):
+        hf_bin = os.path.join(folder_path, "pytorch_model.bin")
+        hf_bin = torch.load(hf_bin, map_location="cpu")
+        hf_keys = list(hf_bin.keys())
+        del hf_bin
+
+        for checkpoint in ["last.ckpt", "best.ckpt"]:
+            pretrained_weights = os.path.join(folder_path, checkpoint)
+
+            if not os.path.exists(pretrained_weights):
+                continue
+
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
+
+            del_keys = [
+                k
+                for k in state_dict["state_dict"].keys()
+                if k.replace("model.backbone.", "") in hf_keys
+            ]
+
+            for k in del_keys:
+                del state_dict["state_dict"][k]
+
+            print("Removing duplicate weights in", pretrained_weights)
+            torch.save(state_dict, pretrained_weights)
+
     def to_folder(self, folder_path=None):
         self.backbone.save_pretrained(folder_path)
+        self.remove_duplicate_weights(folder_path)
 
     @classmethod
     def from_folder(
@@ -142,6 +172,8 @@ class NlpNet(nn.Module, Serializable):
         config_path = Serializable.get_config_path(folder_path)
         if best:
             pretrained_weights = Serializable.find_best_ckpt(folder_path)
+        elif pretrained_weights is None and os.path.join(folder_path, "last.ckpt"):
+            pretrained_weights = os.path.join(folder_path, "last.ckpt")
 
         return cls.from_config(
             config_path,
