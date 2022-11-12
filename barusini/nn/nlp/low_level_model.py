@@ -13,23 +13,75 @@ HEADS = [SIMPLE_HEAD, LINEAR_HEAD]
 CLS_POOLING = "cls"
 MAX_POOLING = "max"
 AVG_POOLING = "avg"
-POOLINGS = [CLS_POOLING, MAX_POOLING, AVG_POOLING]
+ATTENTION_POOLING = "attention"
+POOLINGS = [
+    CLS_POOLING,
+    MAX_POOLING,
+    AVG_POOLING,
+    ATTENTION_POOLING,
+]
 
 
 def cls_pooling(x, mask):
     return x[:, 0, :]
 
 
-def avg_pooling(x, mask):
-    denom = torch.sum(mask, -1, keepdim=True)
-    return torch.sum(x * mask.unsqueeze(-1), dim=1) / denom
+class AttentionPooling(nn.Module):
+    def __init__(self, in_dim):
+        super().__init__()
+        self.attention = nn.Sequential(
+            nn.Linear(in_dim, in_dim),
+            nn.LayerNorm(in_dim),
+            nn.GELU(),
+            nn.Linear(in_dim, 1),
+        )
+
+    def forward(self, last_hidden_state, attention_mask):
+        w = self.attention(last_hidden_state).float()
+        w[attention_mask == 0] = float("-inf")
+        w = torch.softmax(w, 1)
+        attention_embeddings = torch.sum(w * last_hidden_state, dim=1)
+        return attention_embeddings
 
 
-def get_pooling(pooling):
+class MeanPooling(nn.Module):
+    def __init__(self):
+        super(MeanPooling, self).__init__()
+
+    def forward(self, last_hidden_state, attention_mask):
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        )
+        sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, 1)
+        sum_mask = input_mask_expanded.sum(1)
+        sum_mask = torch.clamp(sum_mask, min=1e-9)
+        mean_embeddings = sum_embeddings / sum_mask
+        return mean_embeddings
+
+
+class MaxPooling(nn.Module):
+    def __init__(self):
+        super(MaxPooling, self).__init__()
+
+    def forward(self, last_hidden_state, attention_mask):
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        )
+        embeddings = last_hidden_state.clone()
+        embeddings[input_mask_expanded == 0] = -1e4
+        max_embeddings, _ = torch.max(embeddings, dim=1)
+        return max_embeddings
+
+
+def get_pooling(pooling, hidden_size):
     if pooling == CLS_POOLING:
         return cls_pooling
     elif pooling == AVG_POOLING:
-        return avg_pooling
+        return MeanPooling()
+    elif pooling == MAX_POOLING:
+        return MaxPooling()
+    elif pooling == ATTENTION_POOLING:
+        return AttentionPooling(hidden_size)
     else:
         raise ValueError(f"Unsupported pooling {pooling}")
 
@@ -57,7 +109,6 @@ class NlpNet(nn.Module, Serializable):
         self.dropout = dropout
         self.backbone = None
         self.head = None
-        self.pooling = get_pooling(pooling)
 
         if classification:
             n_classes = get_real_n_classes(n_classes)
@@ -76,6 +127,8 @@ class NlpNet(nn.Module, Serializable):
                 self.model_config.attention_probs_dropout_prob = self.dropout
 
             self.get_architecture(head)
+
+        self.pooling = get_pooling(pooling, self.model_config.hidden_size)
 
         if self.pretrained_weights is not None:
             self.load_weights(self.pretrained_weights)

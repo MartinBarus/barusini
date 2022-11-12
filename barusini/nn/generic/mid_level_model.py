@@ -66,6 +66,8 @@ class Model(pl.LightningModule):
 
     def get_loss_fn(self):
         if self.custom_loss:
+            if isinstance(self.custom_loss, str):
+                return getattr(torch.nn, self.custom_loss)()
             return self.custom_loss
 
         if self.metric.lower() in ["rmse", "mse"]:
