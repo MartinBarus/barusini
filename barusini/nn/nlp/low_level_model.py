@@ -11,19 +11,31 @@ LINEAR_HEAD = "linear"
 HEADS = [SIMPLE_HEAD, LINEAR_HEAD]
 
 CLS_POOLING = "cls"
+CLS_LAST_POOLING = "cls_last_"
 MAX_POOLING = "max"
 AVG_POOLING = "avg"
 ATTENTION_POOLING = "attention"
+ATTENTION_LAST_POOLING = "attention_last_"
 POOLINGS = [
     CLS_POOLING,
     MAX_POOLING,
     AVG_POOLING,
     ATTENTION_POOLING,
+    CLS_LAST_POOLING,
 ]
 
 
 def cls_pooling(x, mask):
     return x[:, 0, :]
+
+
+def get_cls_last_pooling(top_n):
+    assert top_n > 1, f"Incorrect number of last layers to use: {top_n}"
+
+    def cls_last_pooling(x, mask):
+        return torch.concat([x[-i][:, 0] for i in range(1, top_n + 1)], dim=1)
+
+    return cls_last_pooling
 
 
 class AttentionPooling(nn.Module):
@@ -42,6 +54,18 @@ class AttentionPooling(nn.Module):
         w = torch.softmax(w, 1)
         attention_embeddings = torch.sum(w * last_hidden_state, dim=1)
         return attention_embeddings
+
+
+class LastNAttentionPooling(AttentionPooling):
+    def __init__(self, in_dim, last_n):
+        super().__init__(in_dim * last_n)
+        self.last_n = last_n
+
+    def forward(self, last_hidden_state, attention_mask):
+        x = torch.concat(
+            [last_hidden_state[-i] for i in range(1, self.last_n + 1)], dim=2
+        )
+        return super().forward(x, attention_mask)
 
 
 class MeanPooling(nn.Module):
@@ -73,6 +97,10 @@ class MaxPooling(nn.Module):
         return max_embeddings
 
 
+def get_last_n(pooling):
+    return int(pooling.split("_last_")[1])
+
+
 def get_pooling(pooling, hidden_size):
     if pooling == CLS_POOLING:
         return cls_pooling
@@ -82,6 +110,10 @@ def get_pooling(pooling, hidden_size):
         return MaxPooling()
     elif pooling == ATTENTION_POOLING:
         return AttentionPooling(hidden_size)
+    elif ATTENTION_LAST_POOLING in pooling:
+        return LastNAttentionPooling(hidden_size, get_last_n(pooling))
+    elif CLS_LAST_POOLING in pooling:
+        return get_cls_last_pooling(get_last_n(pooling))
     else:
         raise ValueError(f"Unsupported pooling {pooling}")
 
@@ -115,6 +147,13 @@ class NlpNet(nn.Module, Serializable):
 
         self.n_classes = n_classes
 
+        if "_last_" in pooling:
+            self.backbone_output = "hidden_states"
+            self.output_coef = get_last_n(pooling)
+        else:
+            self.backbone_output = "last_hidden_state"
+            self.output_coef = 1
+
         if model_folder is not None:
             self.model_config = None
             self.get_architecture(head, model_folder=model_folder)
@@ -127,6 +166,9 @@ class NlpNet(nn.Module, Serializable):
                 self.model_config.attention_probs_dropout_prob = self.dropout
 
             self.get_architecture(head)
+
+        if "_last_" in pooling:
+            self.model_config.output_hidden_states = True
 
         self.pooling = get_pooling(pooling, self.model_config.hidden_size)
 
@@ -155,7 +197,9 @@ class NlpNet(nn.Module, Serializable):
                     config=self.model_config,
                     ignore_mismatched_sizes=True,
                 )
-            self.head = nn.Linear(self.model_config.hidden_size, self.n_classes)
+            self.head = nn.Linear(
+                self.model_config.hidden_size * self.output_coef, self.n_classes
+            )
         else:
             raise ValueError()
 
@@ -171,7 +215,7 @@ class NlpNet(nn.Module, Serializable):
 
         if self.head is not None:
             mask = input_dict["attention_mask"]
-            x = self.pooling(x["last_hidden_state"], mask)
+            x = self.pooling(x[self.backbone_output], mask)
             x = self.head(x)
             return {"logits": x}
 
@@ -184,7 +228,7 @@ class NlpNet(nn.Module, Serializable):
         hf_keys = list(hf_bin.keys())
         del hf_bin
 
-        for checkpoint in ["last.ckpt", "best.ckpt"]:
+        for checkpoint in ["last.ckpt"]:
             pretrained_weights = os.path.join(folder_path, checkpoint)
 
             if not os.path.exists(pretrained_weights):
