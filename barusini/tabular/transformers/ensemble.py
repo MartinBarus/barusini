@@ -74,9 +74,7 @@ class Ensemble(Transformer):
 
 
 class WeightedAverage:
-    def __init__(
-        self, num_classes=1, min_weight=0.01, method="SLSQP", tol=1e-6
-    ):
+    def __init__(self, num_classes=1, min_weight=0.01, method="SLSQP", tol=1e-6):
         self.weights = None
         self.res = None
         self.min_weight = min_weight
@@ -99,9 +97,7 @@ class WeightedAverage:
         return fn_to_minimize, start, constraints
 
     def _solve(self, X, y, zero_weight_idxs):
-        significant_models = [
-            i for i in range(X.shape[1]) if i not in zero_weight_idxs
-        ]
+        significant_models = [i for i in range(X.shape[1]) if i not in zero_weight_idxs]
         fn, start, constraints = self._get_optimization_fn(
             X.iloc[:, significant_models], y
         )
@@ -126,6 +122,8 @@ class WeightedAverage:
         return []
 
     def process_target(self, y):
+        if len(y.shape) == 2 and y.shape[1] == self.num_classes:
+            return y.values.T.reshape(-1)
         return np.hstack([1 * (y.values == i) for i in range(self.num_classes)])
 
     def process_data(self, X):
@@ -133,8 +131,7 @@ class WeightedAverage:
         num_models = X.shape[1] // self.num_classes
         for i_class in range(self.num_classes):
             act_class_cols = [
-                i_model * self.num_classes + i_class
-                for i_model in range(num_models)
+                i_model * self.num_classes + i_class for i_model in range(num_models)
             ]
             new_X.extend(X.iloc[:, act_class_cols].values)
 
