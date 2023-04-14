@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 import optuna
-from barusini.utils import deepcopy
+from barusini.utils import deepcopy, save_object
 
 LOG = "log"
 LOGINT = "logint"
@@ -74,6 +74,8 @@ def cv_predictions(
         preds = np.zeros(test_shape)
 
     monitored_attributes = {attr: [] for attr in attributes_to_monitor}
+    models = []
+
     for i, (idxT, idxV) in enumerate(cv.split(X_train, y_train)):
         if print_split_info:
             print(" rows of train =", len(idxT), "rows of holdout =", len(idxV))
@@ -109,7 +111,8 @@ def cv_predictions(
         for attr in attributes_to_monitor:
             monitored_attributes[attr].append(getattr_rec(model, attr))
 
-    return oof, preds, monitored_attributes
+        models.append(deepcopy(model))
+    return oof, preds, monitored_attributes, models
 
 
 class Parameter:
@@ -120,9 +123,7 @@ class Parameter:
         self.param_args = param_args
 
     def suggest(self, trial):
-        assert self.param_type in ALLOWED_DISTRIBUTIONS, ERR.format(
-            self.param_type
-        )
+        assert self.param_type in ALLOWED_DISTRIBUTIONS, ERR.format(self.param_type)
         if self.param_type == LOG:
             suggest_function = trial.suggest_loguniform
         elif self.param_type == LOGINT:
@@ -203,10 +204,8 @@ class Trial:
         if print_intermediate_results:
             print(params)
 
-        monitored_attrs = [
-            attr["param"] for attr in attributes_to_monitor.values()
-        ]
-        oof, preds, monitored_attributes = cv_predictions(
+        monitored_attrs = [attr["param"] for attr in attributes_to_monitor.values()]
+        oof, preds, monitored_attributes, models = cv_predictions(
             new_model,
             X_train,
             y_train,
@@ -223,9 +222,7 @@ class Trial:
             if print_intermediate_results:
                 print(monitored_attributes, info["param"])
             default = getattr(new_model.model, attr)
-            monitored_vals = [
-                default if x is None else x for x in monitored_vals
-            ]
+            monitored_vals = [default if x is None else x for x in monitored_vals]
             attr_mean = np.mean(monitored_vals)
             attr_std = np.std(monitored_vals)
             attr_value = info["type"](attr_mean)
@@ -247,9 +244,14 @@ class Trial:
         if csv_path:
             score_str = round(score, 5)
             oof_path = csv_path.format(score_str, "OOF")
-            np.savetxt(oof_path, oof)
-            test_path = csv_path.format(score_str, "TEST")
-            np.savetxt(test_path, preds)
+            save_object(oof, oof_path)
+
+            pipeline_path = csv_path.format(score_str, "pipeline")
+            save_object(models, pipeline_path)
+
+            if preds is not None:
+                test_path = csv_path.format(score_str, "TEST")
+                save_object(preds, test_path)
 
         return score
 
