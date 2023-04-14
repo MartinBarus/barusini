@@ -32,10 +32,12 @@ class ImageDataset(torch.utils.data.Dataset, Serializable):
         image_width=224,
         image_normalization=IMAGENET_IMG_NORM,
         mode=TEST_MODE,
+        allow_missing_input=False,
         **kwargs,
     ):
 
         self.normalization = image_normalization
+        self.allow_missing_input = allow_missing_input
         assert self.normalization in NORM_DICT.keys(), (
             f"{self.normalization} image normalization is not supported, choose one of "
             f"{list(NORM_DICT.keys())}"
@@ -49,6 +51,7 @@ class ImageDataset(torch.utils.data.Dataset, Serializable):
         if self.labels is not None:
             self.labels = df[self.labels].values
 
+        self.image_height = image_height
         self.augment_test = A.Compose(
             [A.Resize(height=image_height, width=image_width, p=1)]
         )
@@ -63,35 +66,45 @@ class ImageDataset(torch.utils.data.Dataset, Serializable):
         return len(self.image_paths)
 
     def __getitem__(self, index):
-        path = os.path.join(self.data_folder, self.image_paths.iloc[index])
-        image = cv2.imread(path)
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        image = image / 255
+        try:
+            path = os.path.join(self.data_folder, self.image_paths.iloc[index])
+            image = cv2.imread(path)
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            image = image / 255
 
-        if self.mode == TEST_MODE:
-            image = self.augment_test(image=image)["image"]
-        elif self.mode == TRAIN_MODE:
-            image = self.augment_train(image=image)["image"]
-        else:
-            raise ValueError(f"Unsupported data mode {self.mode}!")
-
-        image = torch.tensor(image.transpose((2, 0, 1)), dtype=torch.float)
-        norm_kwargs = NORM_DICT[self.normalization]
-        if norm_kwargs:
-            image = normalize(image, **norm_kwargs)
-
-        feature_dict = {
-            "idx": torch.tensor(index).long(),
-            "input": image,
-        }
-
-        if self.labels is not None:
-            target = self.labels[index]
-            if self.label_smoothing:
-                feature_dict["target"] = torch.tensor(
-                    abs(target - self.label_smoothing)
-                )
+            if self.mode == TEST_MODE:
+                image = self.augment_test(image=image)["image"]
+            elif self.mode == TRAIN_MODE:
+                image = self.augment_train(image=image)["image"]
             else:
-                feature_dict["target"] = torch.tensor(target, dtype=torch.float)
+                raise ValueError(f"Unsupported data mode {self.mode}!")
 
-        return feature_dict
+            image = torch.tensor(image.transpose((2, 0, 1)), dtype=torch.float)
+            norm_kwargs = NORM_DICT[self.normalization]
+            if norm_kwargs:
+                image = normalize(image, **norm_kwargs)
+
+            feature_dict = {
+                "idx": torch.tensor(index).long(),
+                "input": image,
+            }
+
+            if self.labels is not None:
+                target = self.labels[index]
+                if self.label_smoothing:
+                    feature_dict["target"] = torch.tensor(
+                        abs(target - self.label_smoothing)
+                    )
+                else:
+                    feature_dict["target"] = torch.tensor(target, dtype=torch.float)
+
+            return feature_dict
+        except:
+            if not self.allow_missing_input:
+                raise
+
+            height = self.image_height
+            return {
+                "idx": torch.tensor(-1).long(),
+                "input": torch.zeros([3, height, height], dtype=torch.float),
+            }
