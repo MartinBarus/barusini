@@ -63,9 +63,7 @@ class TimeSplit(object):
         assert X.shape[0] == self.time_col.size
         assert all(X.index.values == self.time_col.index.values)
         for i, (start, stop) in enumerate(self._get_dates()):
-            valid = self.time_col[
-                (self.time_col <= stop) & (self.time_col >= start)
-            ]
+            valid = self.time_col[(self.time_col <= stop) & (self.time_col >= start)]
             train = self.time_col[self.time_col < start]
 
             if verbose:
@@ -182,3 +180,17 @@ class TimeSplitList(TimeSplit):
 
     def _get_dates(self):
         return self.start_stop_list
+
+
+class CustomCv:
+    def __init__(self, folds):
+        self.folds = folds
+        self.n_splits = folds.nunique()
+
+    def split(self, X: pd.DataFrame, *args, **kwargs):
+        assert X.shape[0] == self.folds.size
+        assert all(X.index.values == self.folds.index.values)
+        for fold in sorted(self.folds.unique()):
+            train = self.folds[self.folds != fold].index.values
+            valid = self.folds[self.folds == fold].index.values
+            yield train, valid
