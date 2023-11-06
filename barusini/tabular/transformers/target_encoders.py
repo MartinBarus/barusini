@@ -156,7 +156,7 @@ class TargetEncoder(Encoder):
                 act_new_X = predictor.transform(act_new_X).values
                 for i, col in enumerate(self.target_names):
                     if col not in new_X.columns:
-                        new_X[col] = 0
+                        new_X[col] = 0.0
                     col_idx = new_X.columns.tolist().index(col)
                     new_X.iloc[test, col_idx] = act_new_X[:, i]
 

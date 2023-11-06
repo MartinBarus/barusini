@@ -145,7 +145,7 @@ class CustomOneHotEncoder(GenericEncoder):
     def __init__(self, used_cols=None, **kwargs):
         super().__init__(used_cols=used_cols)
         self.encoder = OneHotEncoder(
-            sparse=False, categories="auto", handle_unknown="ignore"
+            sparse_output=False, categories="auto", handle_unknown="ignore"
         )
 
     def preprocess(self, X):

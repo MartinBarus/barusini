@@ -19,7 +19,7 @@ class Ensemble(Transformer):
         oof_predictions = []
         for pipeline in tqdm(self.pipelines):
             proba = hasattr(pipeline.model, "predict_proba")
-            oof, _, _ = cv_predictions(pipeline, X, y, None, self.cv, proba)
+            oof, _, _, _ = cv_predictions(pipeline, X, y, None, self.cv, proba)
             if len(oof.shape) == 1:
                 oof = oof.reshape(-1, 1)
             shapes.add(oof.shape[1])

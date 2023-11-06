@@ -125,7 +125,9 @@ class Parameter:
     def suggest(self, trial):
         assert self.param_type in ALLOWED_DISTRIBUTIONS, ERR.format(self.param_type)
         if self.param_type == LOG:
-            suggest_function = trial.suggest_loguniform
+            suggest_function = lambda name, low, high: trial.suggest_float(
+                name, low, high, log=True
+            )
         elif self.param_type == LOGINT:
             suggest_function = lambda name, low, high: trial.suggest_int(
                 name, low, high, log=True
@@ -133,7 +135,7 @@ class Parameter:
         elif self.param_type == INT:
             suggest_function = trial.suggest_int
         elif self.param_type == UNIFORM:
-            suggest_function = trial.suggest_uniform
+            suggest_function = trial.suggest_float
         elif self.param_type == CATEGORY:
             suggest_function = trial.suggest_categorical
         else:
@@ -325,14 +327,13 @@ class Trial:
 
 
 class TreeTrial(Trial):
-    additional_fit_params = {
-        "eval_set": True,
-        "early_stopping_rounds": 20,
-    }
+    pass
 
 
 class XGBoostTrial(TreeTrial):
     additional_fit_params = {
+        "eval_set": True,
+        "early_stopping_rounds": 20,
         "verbose": 0,
     }
 
@@ -359,9 +360,6 @@ class XGBoostTrial(TreeTrial):
 
 
 class LightGBMTrial(TreeTrial):
-    additional_fit_params = {
-        "verbose": 0,
-    }
     attributes_to_monitor = {
         "n_estimators": {
             "type": round,
