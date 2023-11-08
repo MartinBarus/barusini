@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 
 class ConfidenceIntervals:
@@ -11,16 +12,25 @@ class ConfidenceIntervals:
     def get_quantiles(residuals, quantiles=[0.05]):
         quantiles = [q if q <= 0.5 else 1 - q for q in quantiles]
         quantiles = sorted(set(quantiles))
-        quantiles2 = [1 - q for q in quantiles]
+        quantiles2 = [1 - q for q in quantiles if q < 0.5]
         quantiles = quantiles + quantiles2[::-1]
-        return residuals.quantile(quantiles)
+        quantiles = residuals.quantile(quantiles)
+        quantiles.index = [ConfidenceIntervals.round(x) for x in quantiles.index]
+        return quantiles
+
+    @staticmethod
+    def round(x, n_decimal=4):
+        rounded = round(x, n_decimal)
+        if np.isclose(x, rounded):
+            return rounded
+        return x
 
     def fit(self, predictions, labels, quantiles):
         residuals = predictions - labels
         self.quantiles = self.get_quantiles(residuals, quantiles)
         self.check_quantiles()
         self.quantiles[""] = 0
-        self.quantiles.index = [f"prediction {x}" for x in self.quantiles.index]
+        self.quantiles.index = [f"prediction {x}".strip() for x in self.quantiles.index]
         return self
 
     def check_quantiles(self):
