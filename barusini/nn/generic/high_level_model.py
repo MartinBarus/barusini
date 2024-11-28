@@ -199,7 +199,11 @@ class HighLevelModel(HighLeveMetalModel):
             classification = is_classification_metric(self.metric)
 
         print(
-            "Params", "val_split", val_split, "num_workers", num_workers,
+            "Params",
+            "val_split",
+            val_split,
+            "num_workers",
+            num_workers,
         )
         param_err = "{} should be path to {} file or a dataframe"
         if type(train) not in [str, pd.DataFrame]:
@@ -301,7 +305,6 @@ class HighLevelModel(HighLeveMetalModel):
             accelerator="gpu",
             devices=gpus,
             logger=logger,
-            resume_from_checkpoint=None,
             max_epochs=self.max_epochs,
             accumulate_grad_batches=self.gradient_accumulation_steps,
             default_root_dir=experiment_path,

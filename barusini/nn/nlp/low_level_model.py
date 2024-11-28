@@ -4,6 +4,7 @@ import torch
 from barusini.nn.generic.loading import Serializable
 from barusini.nn.generic.utils import get_real_n_classes
 from torch import nn
+from safetensors import safe_open
 from transformers import AutoConfig, AutoModel, AutoModelForSequenceClassification
 
 SIMPLE_HEAD = "simple"
@@ -101,17 +102,13 @@ def get_last_n(pooling):
     return int(pooling.split("_last_")[1])
 
 
-def get_pooling(pooling, hidden_size):
+def get_pooling(pooling):
     if pooling == CLS_POOLING:
         return cls_pooling
     elif pooling == AVG_POOLING:
         return MeanPooling()
     elif pooling == MAX_POOLING:
         return MaxPooling()
-    elif pooling == ATTENTION_POOLING:
-        return AttentionPooling(hidden_size)
-    elif ATTENTION_LAST_POOLING in pooling:
-        return LastNAttentionPooling(hidden_size, get_last_n(pooling))
     elif CLS_LAST_POOLING in pooling:
         return get_cls_last_pooling(get_last_n(pooling))
     else:
@@ -170,7 +167,7 @@ class NlpNet(nn.Module, Serializable):
         if "_last_" in pooling:
             self.model_config.output_hidden_states = True
 
-        self.pooling = get_pooling(pooling, self.model_config.hidden_size)
+        self.pooling = get_pooling(pooling)
 
         if self.pretrained_weights is not None:
             self.load_weights(self.pretrained_weights)
@@ -223,8 +220,8 @@ class NlpNet(nn.Module, Serializable):
 
     @staticmethod
     def remove_duplicate_weights(folder_path):
-        hf_bin = os.path.join(folder_path, "pytorch_model.bin")
-        hf_bin = torch.load(hf_bin, map_location="cpu")
+        hf_bin = os.path.join(folder_path, "model.safetensors")
+        hf_bin = safe_open(hf_bin, framework="pt")
         hf_keys = list(hf_bin.keys())
         del hf_bin
 
@@ -234,7 +231,9 @@ class NlpNet(nn.Module, Serializable):
             if not os.path.exists(pretrained_weights):
                 continue
 
-            state_dict = torch.load(pretrained_weights, map_location="cpu")
+            state_dict = torch.load(
+                pretrained_weights, map_location="cpu", weights_only=False
+            )
 
             del_keys = [
                 k

@@ -63,6 +63,7 @@ class Model(pl.LightningModule):
         self.val_check_interval = val_check_interval
         self.num_train_steps = math.ceil(len_tr_dl / gradient_accumulation_steps)
         self.classification = classification
+        self.outputs = []
 
     def get_loss_fn(self):
         if self.custom_loss:
@@ -228,16 +229,17 @@ class Model(pl.LightningModule):
             "preds": preds,
             "target": target,
         }
+        self.outputs.append(output)
         return output
 
     def log_all(self, dct):
         for k, v in dct.items():
             self.log(k, v, prog_bar=True)
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         out_val = {}
-        for key in outputs[0].keys():
-            out_val[key] = torch.cat([o[key] for o in outputs])
+        for key in self.outputs[0].keys():
+            out_val[key] = torch.cat([o[key] for o in self.outputs])
 
         val_loss = self.loss(out_val["preds"], out_val["target"])
 

@@ -47,9 +47,10 @@ class ImageDataset(torch.utils.data.Dataset, Serializable):
             df = pd.read_csv(df)
 
         self.image_paths = df[path_col]
-        self.labels = label
-        if self.labels is not None:
-            self.labels = df[self.labels].values
+        if label is not None and label in df.columns:
+            self.labels = df[label].values
+        else:
+            self.labels = None
 
         self.image_height = image_height
         self.augment_test = A.Compose(

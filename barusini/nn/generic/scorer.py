@@ -61,7 +61,7 @@ class Scorer(torch.nn.Module, Serializable):
             return sigmoid(logits)
         if logits.shape[1] == 1:
             return logits.apply(sigmoid, axis=1)
-        return logits.apply(softmax, axis=1)
+        return pd.DataFrame(softmax(logits.values, axis=1))
 
     def _predict(self, dl, precision=None):
         if precision is None:
