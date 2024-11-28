@@ -136,7 +136,13 @@ def test_image_binary(mnist, image_config):
 
 def test_image_regression(mnist, image_config):
     preds, label = run_image_test(
-        mnist, image_config, label_col="label", proba=False, n_classes=1, metric="rmse"
+        mnist,
+        image_config,
+        label_col="label",
+        proba=False,
+        n_classes=1,
+        metric="rmse",
+        max_epochs=2,
     )
     score = rmse(preds, label)
     assert score < 2
