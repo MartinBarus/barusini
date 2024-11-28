@@ -21,7 +21,7 @@ def run_nn_test(
     model.fit(train_path, val_path, gpus=get_gpus())  # use gpus=[0] to use GPU 0
 
     # Create Scorer (used for predicting) from NLP Model checkpoint folder
-    model_folder = model.ckpt_save_path.format(val=os.path.basename(val_path))
+    model_folder = model.ckpt_save_path.format(val=os.path.basename(val_path), seed=model._seed)
     scorer = scorer_class.from_folder(model_folder)
 
     # Load test data, make predictions

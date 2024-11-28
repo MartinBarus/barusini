@@ -38,7 +38,7 @@ def nlp_data():
 def nlp_config():
     config_path = "cfg_nlp.json"
     config = {
-        "n_classes": 2,
+        "n_classes": 1,
         "n_tokens": 256,
         "backbone": "distilbert-base-uncased",
         "batch_size": 16,
@@ -63,7 +63,7 @@ def run_nlp_test(data, config, label_col, proba, **config_overrides):
 
 def test_nlp_binary(nlp_data, nlp_config):
     preds, label = run_nlp_test(nlp_data, nlp_config, label_col="label", proba=True)
-    auc = roc_auc_score(label, preds.iloc[:, 0])
+    auc = roc_auc_score(label, preds)
     assert auc > 0.7
 
 
@@ -71,5 +71,5 @@ def test_nlp_regression(nlp_data, nlp_config):
     preds, label = run_nlp_test(
         nlp_data, nlp_config, label_col="label", proba=False, n_classes=1, metric="rmse"
     )
-    score = rmse(label, preds.iloc[:, 0])
+    score = rmse(label, preds)
     assert score < 0.5
