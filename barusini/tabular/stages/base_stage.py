@@ -48,9 +48,7 @@ def get_valid_encoders(column, y, classification, allowed_encoders):
     if too_many:
         if str(column.dtypes) == "object":
             encoders = [
-                LinearTextEncoder(
-                    used_cols=[column.name], multi_class=multiclass
-                ),
+                LinearTextEncoder(used_cols=[column.name], multi_class=multiclass),
                 TfIdfPCAEncoder(used_cols=[column.name], n_components=20),
                 TfIdfEncoder(used_cols=[column.name], vocab_size=20),
             ]
@@ -64,9 +62,7 @@ def get_valid_encoders(column, y, classification, allowed_encoders):
             return subset_allowed_encoders(encoders, allowed_encoders)
         return []
 
-    encoders = [
-        MeanTargetEncoder(used_cols=[column.name], multi_class=multiclass)
-    ]
+    encoders = [MeanTargetEncoder(used_cols=[column.name], multi_class=multiclass)]
     if n_unique < 10:
         encoders.extend(
             [
@@ -105,6 +101,7 @@ def best_alternative_model(
     proba,
     X,
     y,
+    sample_weight,
 ):
 
     kwargs = dict(cv=cv, scoring=metric, n_jobs=cv_n_jobs, proba=proba)
@@ -113,12 +110,16 @@ def best_alternative_model(
             n_jobs=alternative_n_jobs, verbose=False, pre_dispatch="2*n_jobs"
         )
         result = parallel(
-            delayed(cross_val_with_pipeline)(pipeline, X, y, **kwargs)
+            delayed(cross_val_with_pipeline)(
+                pipeline, X, y, sample_weight=sample_weight, **kwargs
+            )
             for pipeline in alternative_pipelines
         )
     else:
         result = [
-            cross_val_with_pipeline(pipeline, X, y, **kwargs)
+            cross_val_with_pipeline(
+                pipeline, X, y, sample_weight=sample_weight, **kwargs
+            )
             for pipeline in alternative_pipelines
         ]
 
@@ -135,6 +136,7 @@ def generic_change(
     X,
     y,
     model_pipeline,
+    sample_weight=None,
     cv=CV,
     metric=None,
     maximize=None,
@@ -148,23 +150,31 @@ def generic_change(
 ):
     print(format_str("Starting stage {}".format(stage_name)))
     base_score = cross_val_score(
-        model_pipeline, X, y, cv=cv, n_jobs=-1, scoring=metric, proba=proba,
+        model=model_pipeline,
+        X=X,
+        y=y,
+        sample_weight=sample_weight,
+        cv=cv,
+        n_jobs=-1,
+        scoring=metric,
+        proba=proba,
     )
     print("BASE", base_score)
     original_best = base_score
     old_cols = model_pipeline.transform(X)[model_pipeline.used_cols].columns
     while True:
         best_pipeline, base_score = best_alternative_model(
-            generator(model_pipeline),
-            base_score,
-            maximize,
-            cv,
-            metric,
-            cv_n_jobs,
-            alternative_n_jobs,
-            proba,
-            X,
-            y,
+            alternative_pipelines=generator(model_pipeline),
+            base_score=base_score,
+            maximize=maximize,
+            cv=cv,
+            metric=metric,
+            cv_n_jobs=cv_n_jobs,
+            alternative_n_jobs=alternative_n_jobs,
+            proba=proba,
+            X=X,
+            y=y,
+            sample_weight=sample_weight
         )
         if best_pipeline is not None:
             model_pipeline = best_pipeline

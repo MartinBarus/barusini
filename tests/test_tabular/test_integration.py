@@ -48,12 +48,10 @@ def salary_data():
         return train, test
 
     train_data = (
-        "https://archive.ics.uci.edu/ml/machine-learning-databases"
-        "/adult/adult.data"
+        "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
     )
     test_data = (
-        "https://archive.ics.uci.edu/ml/machine-learning-databases"
-        "/adult/adult.test"
+        "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test"
     )
 
     columns = [
@@ -89,9 +87,7 @@ def salary_data():
     return train, test
 
 
-def run_integration(
-    data, target, models_list, classification, metric, cv, proba
-):
+def run_integration(data, target, models_list, classification, metric, cv, proba):
     train, test = data
     models_dict = {
         model: feature_engineering(
@@ -182,9 +178,10 @@ def test_hyper_parameter_tuning(salary_data):
     )
 
     best_model = model_search(
-        train.drop(columns=[target]),
-        train[target],
-        model,
+        X_train=train.drop(columns=[target]),
+        y_train=train[target],
+        model=model,
+        sample_weight=[1] * train.shape[0],
         X_test=test.drop(columns=[target]),
         y_test=test[target],
         cv=StratifiedKFold(n_splits=3, random_state=42, shuffle=True),
@@ -198,13 +195,13 @@ def test_hyper_parameter_tuning(salary_data):
         # hyper parameters and tuning space
         params={
             "min_child_samples": (LOGINT, (1, 1000)),
-            "num_leaves": (LOGINT, (2 ** 3, 2 ** 12)),
+            "num_leaves": (LOGINT, (2**3, 2**12)),
             "learning_rate": (LOG, (1e-4, 1e1)),
             "subsample": (UNIFORM, (0.6, 1)),
             "colsample_bytree": (UNIFORM, (0.6, 1)),
         },
         # additional parameters passed to fit (f.e. "eval_set=True")
-        additional_fit_params={"verbose": 0},
+        additional_fit_params={},
         # used only with early stopping to monitor number of iterations
         attributes_to_monitor={},
     )

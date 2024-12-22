@@ -21,6 +21,7 @@ from barusini.utils import (
 def feature_engineering(
     X,
     y,
+    sample_weight=None,
     model_path=None,
     imputation_stage=False,
     subset_stage=True,
@@ -42,9 +43,10 @@ def feature_engineering(
     )
     if imputation_stage:
         model = find_best_imputation(
-            X,
-            y,
-            model,
+            X=X,
+            y=y,
+            model=model,
+            sample_weight=sample_weight,
             classification=classification,
             allowed_encoders=allowed_transformers,
             cv=cv,
@@ -56,9 +58,10 @@ def feature_engineering(
 
     if subset_stage:
         model = find_best_subset(
-            X,
-            y,
-            model,
+            X=X,
+            y=y,
+            model=model,
+            sample_weight=sample_weight,
             cv=cv,
             metric=metric,
             maximize=maximize,
@@ -68,9 +71,10 @@ def feature_engineering(
 
     if encode_stage:
         model = encode_categoricals(
-            X,
-            y,
-            model,
+            X=X,
+            y=y,
+            model=model,
+            sample_weight=sample_weight,
             classification=classification,
             allowed_encoders=allowed_transformers,
             cv=cv,
@@ -81,9 +85,10 @@ def feature_engineering(
         )
     if recode_stage:
         model = recode_categoricals(
-            X,
-            y,
-            model,
+            X=X,
+            y=y,
+            model=model,
+            sample_weight=sample_weight,
             classification=classification,
             allowed_encoders=allowed_transformers,
             cv=cv,
@@ -106,6 +111,7 @@ def model_search(
     X_train,
     y_train,
     model,
+    sample_weight,
     X_test=None,
     y_test=None,
     model_path=None,
@@ -121,10 +127,11 @@ def model_search(
         proba, maximize, scorer, classification, model
     )
     best = model.tune(
-        X_train,
-        y_train,
-        cv,
-        scorer,
+        X=X_train,
+        y=y_train,
+        sample_weight=sample_weight,
+        cv=cv,
+        score=scorer,
         maximize=maximize,
         probability=proba,
         n_trials=n_trials,
@@ -148,6 +155,7 @@ def model_search(
 def auto_ml(
     X,
     y,
+    sample_weight=None,
     estimator=ESTIMATOR,
     X_test=None,
     y_test=None,
@@ -164,8 +172,9 @@ def auto_ml(
     proba=None,
 ):
     model = feature_engineering(
-        X,
-        y,
+        X=X,
+        y=y,
+        sample_weight=sample_weight,
         model_path=model_path,
         classification=classification,
         subset_stage=subset_stage,
@@ -184,6 +193,7 @@ def auto_ml(
         X,
         y,
         model,
+        sample_weight=sample_weight,
         X_test=X_test,
         y_test=y_test,
         model_path=None,
