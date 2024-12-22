@@ -165,6 +165,7 @@ class Trial:
         X_train,
         y_train,
         X_test,
+        sample_weight,
         cv,
         scoring,
         maximize,
@@ -183,6 +184,7 @@ class Trial:
         :param X_train: pd.DataFrame: train data
         :param y_train: pd.Series: train label
         :param X_test: optional: pd.DataFrame: test data
+        :param sample_weight: optional: weights for the label
         :param cv: sklearn.model_selection._split class
         :param scoring: callable: validation metric
         :param maximize: bool: whether to maximize the metric or minimize
@@ -235,7 +237,10 @@ class Trial:
         try:
             if len(oof.shape) == 2 and oof.shape[1] == 2:
                 oof = oof[:, 1]
-            score = scoring(y_train, oof)
+            if sample_weight is None:
+                score = scoring(y_train, oof)
+            else:
+                score = scoring(y_train, oof, sample_weight=sample_weight)
         except Exception as e:
             score = float("inf")
             print("Error occured:", e)
@@ -263,6 +268,7 @@ class Trial:
         X_train,
         y_train,
         X_test,
+        sample_weight,
         cv,
         scoring,
         maximize,
@@ -283,6 +289,7 @@ class Trial:
             X_train,
             y_train,
             X_test,
+            sample_weight,
             cv,
             scoring,
             maximize,

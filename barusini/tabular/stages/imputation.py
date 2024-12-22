@@ -23,7 +23,15 @@ def get_imputation_generator(column):
 
 @duration("Find Best Imputation")
 def find_best_imputation(
-    X, y, model, cv=CV, metric=None, maximize=None, proba=None, **kwargs
+    X,
+    y,
+    model,
+    sample_weight=None,
+    cv=CV,
+    metric=None,
+    maximize=None,
+    proba=None,
+    **kwargs,
 ):
     imputed_columns = [
         enc.used_cols[0]
@@ -37,6 +45,7 @@ def find_best_imputation(
             X,
             y,
             model,
+            sample_weight=sample_weight,
             stage_name=f"Finding imputation for {column}",
             generator=get_imputation_generator(column),
             cv=cv,

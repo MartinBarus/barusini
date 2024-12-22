@@ -149,6 +149,7 @@ class Pipeline(Transformer):
         y,
         cv,
         score,
+        sample_weight=None,
         probability=None,
         maximize=None,
         params=None,
@@ -185,10 +186,11 @@ class Pipeline(Transformer):
             attributes_to_monitor = self.trial.attributes_to_monitor
 
         best = self.trial.find_hyper_params(
-            self,
+            pipeline=self,
             X_train=X,
             y_train=y,
             X_test=X_test,
+            sample_weight=sample_weight,
             cv=cv,
             scoring=score,
             maximize=maximize,

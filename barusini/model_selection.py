@@ -7,7 +7,7 @@ from joblib import Parallel, delayed
 from barusini.utils import get_probability
 
 
-def validation(model, X, y, train, test, scoring, proba=None):
+def validation(model, X, y, sample_weight, train, test, scoring, proba=None):
     proba = get_probability(scoring) if proba is None else proba
     trn_X = X.loc[train]
     trn_y = y.loc[train]
@@ -21,37 +21,48 @@ def validation(model, X, y, train, test, scoring, proba=None):
             predictions = predictions[:, -1]
     else:
         predictions = model.predict(tst_X)
-    score = scoring(tst_y, predictions)
+
+    if sample_weight is not None:
+        score = scoring(tst_y, predictions, sample_weight=sample_weight)
+    else:
+        score = scoring(tst_y, predictions)
     return score
 
 
-def cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba=None):
+def cross_val_score_parallel(
+    model, X, y, sample_weight, cv, scoring, n_jobs, proba=None
+):
     parallel = Parallel(n_jobs=n_jobs, verbose=False, pre_dispatch="2*n_jobs")
     scores = parallel(
-        delayed(validation)(deepcopy(model), X, y, train, test, scoring, proba)
+        delayed(validation)(
+            deepcopy(model), X, y, sample_weight, train, test, scoring, proba
+        )
         for train, test in cv.split(X, y)
     )
 
     return np.mean(scores)
 
 
-def cross_val_score_sequential(model, X, y, cv, scoring, proba=None):
+def cross_val_score_sequential(model, X, y, sample_weight, cv, scoring, proba=None):
     scores = [
-        validation(deepcopy(model), X, y, train, test, scoring, proba)
+        validation(deepcopy(model), X, y, sample_weight, train, test, scoring, proba)
         for train, test in cv.split(X, y)
     ]
     return np.mean(scores)
 
 
-def cross_val_score(model, X, y, cv, scoring, n_jobs, proba=None):
+def cross_val_score(model, X, y, sample_weight, cv, scoring, n_jobs, proba=None):
     if n_jobs < 2 and n_jobs >= 0:
-        return cross_val_score_sequential(model, X, y, cv, scoring, proba=proba)
-    return cross_val_score_parallel(model, X, y, cv, scoring, n_jobs, proba)
+        return cross_val_score_sequential(
+            model, X, y, sample_weight, cv, scoring, proba=proba
+        )
+    return cross_val_score_parallel(
+        model, X, y, sample_weight, cv, scoring, n_jobs, proba
+    )
 
 
 class TimeSplit(object):
-    """Abstract class for time based validation split
-    """
+    """Abstract class for time based validation split"""
 
     def __init__(self, time_col: pd.Series):
         self.time_col = time_col

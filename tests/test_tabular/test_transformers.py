@@ -92,12 +92,8 @@ def test_target_encoding_train(simple_data):
 
     # THEN transformed data matches expectation
     expected = [5, 6, 4.5, 5.5, 4, 5, 3.5, 4.5, 3, 4]
-    assert np.allclose(
-        transformed_X[te.target_names].values.reshape(-1), expected
-    )
-    assert np.allclose(
-        transformed_X2[te.target_names].values.reshape(-1), expected
-    )
+    assert np.allclose(transformed_X[te.target_names].values.reshape(-1), expected)
+    assert np.allclose(transformed_X2[te.target_names].values.reshape(-1), expected)
     assert (
         transformed_X[te.output_columns()].shape[1]
         == transformed_X2[te.output_columns()].shape[1]
@@ -124,12 +120,8 @@ def test_te_with_more_cols(more_data):
     assert all(X.index == transformed_X2.index)
 
     expected = [4, 5] * 5
-    assert np.allclose(
-        transformed_X1[te1.target_names].values.reshape(-1), expected
-    )
-    assert np.allclose(
-        transformed_X2[te2.target_names].values.reshape(-1), expected
-    )
+    assert np.allclose(transformed_X1[te1.target_names].values.reshape(-1), expected)
+    assert np.allclose(transformed_X2[te2.target_names].values.reshape(-1), expected)
 
     assert transformed_X1.shape[1] == transformed_X2.shape[1] == 4
 
@@ -173,10 +165,10 @@ def test_ohe_with_more_cols(more_data):
 
     expected_a = [1, 0] * 5
     expected_b = [0, 1] * 5
-    assert all(transformed_X1[sanitize("[[a]] [OHE:a]")] == expected_a)
-    assert all(transformed_X1[sanitize("[[a]] [OHE:b]")] == expected_b)
-    assert all(transformed_X2[sanitize("[[a]] [OHE:a]")] == expected_a)
-    assert all(transformed_X2[sanitize("[[a]] [OHE:b]")] == expected_b)
+    assert all(transformed_X1[sanitize("a [OHE:a]")] == expected_a)
+    assert all(transformed_X1[sanitize("a [OHE:b]")] == expected_b)
+    assert all(transformed_X2[sanitize("a [OHE:a]")] == expected_a)
+    assert all(transformed_X2[sanitize("a [OHE:b]")] == expected_b)
 
     assert transformed_X1.shape[1] == transformed_X2.shape[1]
 
@@ -217,8 +209,8 @@ def test_le_with_more_cols(more_data):
     assert all(X.index == transformed_X2.index)
 
     expected = [0, 1] * 5
-    assert all(transformed_X1[sanitize("[[a]] [LE]")] == expected)
-    assert all(transformed_X2[sanitize("[[a]] [LE]")] == expected)
+    assert all(transformed_X1[sanitize("a [LE]")] == expected)
+    assert all(transformed_X2[sanitize("a [LE]")] == expected)
 
     assert transformed_X1.shape[1] == transformed_X2.shape[1]
 

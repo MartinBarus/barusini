@@ -33,7 +33,7 @@ class TfIdfEncoder(GenericEncoder):
     def fit_names(self):
         self.target_names = [
             sanitize(f"{self.used_cols} {val}")
-            for val in self.encoder.get_feature_names()
+            for val in self.encoder.get_feature_names_out()
         ]
 
     def preprocess(self, X):
@@ -57,11 +57,17 @@ class TfIdfPCAEncoder(GenericEncoder):
         super().__init__(used_cols=used_cols)
         idf_kwargs = kwargs_subset(kwargs, "tfidf_")
         idf_kwargs = update_kwargs(
-            idf_kwargs, min_df=3, stop_words="english", ngram_range=(1, 2),
+            idf_kwargs,
+            min_df=3,
+            stop_words="english",
+            ngram_range=(1, 2),
         )
         pca_kwargs = kwargs_subset(kwargs, "pca_")
         pca_kwargs = update_kwargs(
-            pca_kwargs, n_components=n_components, n_iter=7, random_state=42,
+            pca_kwargs,
+            n_components=n_components,
+            n_iter=7,
+            random_state=42,
         )
         self.encoder = Pipeline(
             steps=[

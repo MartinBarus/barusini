@@ -28,6 +28,7 @@ def encode_categoricals(
     model,
     classification,
     allowed_encoders,
+    sample_weight=None,
     cv=CV,
     metric=None,
     maximize=None,
@@ -39,17 +40,14 @@ def encode_categoricals(
     del X_
     print("Encoding stage for ", categoricals)
     for feature in trange(categoricals):
-        encoders = get_valid_encoders(
-            X[feature], y, classification, allowed_encoders
-        )
-        print(
-            f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders]
-        )
+        encoders = get_valid_encoders(X[feature], y, classification, allowed_encoders)
+        print(f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders])
         if encoders:
             model = generic_change(
                 X,
                 y,
                 model,
+                sample_weight=sample_weight,
                 stage_name="Encoding categoricals {}".format(feature),
                 generator=get_encoding_generator(feature, encoders),
                 cv=cv,
@@ -68,6 +66,7 @@ def recode_categoricals(
     model,
     classification,
     allowed_encoders,
+    sample_weight=None,
     max_unique=50,
     cv=CV,
     metric=None,
@@ -84,17 +83,14 @@ def recode_categoricals(
     categoricals = [f for f in nunique.index if nunique[f] <= max_unique]
     print("Trying to recode following categorical values:", categoricals)
     for feature in trange(categoricals):
-        encoders = get_valid_encoders(
-            X[feature], y, classification, allowed_encoders
-        )
-        print(
-            f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders]
-        )
+        encoders = get_valid_encoders(X[feature], y, classification, allowed_encoders)
+        print(f"Encoders for {feature}:", [x.__class__.__name__ for x in encoders])
         if encoders:
             model = generic_change(
                 X,
                 y,
                 model,
+                sample_weight=sample_weight,
                 stage_name="Recoding {}".format(feature),
                 generator=get_encoding_generator(feature, encoders, drop=True),
                 cv=cv,
